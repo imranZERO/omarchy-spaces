@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Long titles no longer cut an emoji or an accented letter in half, and
+  Korean, Japanese and Chinese characters count double toward the title
+  length, so wide titles take the room the setting promises. The placeholder
+  letter keeps a whole emoji or syllable too (#17, @seunghan91)
+
 ## 1.2.0
 
 - Agent status for omp (oh-my-pi): add `hooks/omp-extension.js` to your omp
