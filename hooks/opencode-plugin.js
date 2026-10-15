@@ -23,6 +23,10 @@
 //           ~/.config/opencode/plugins/spaces.js
 //
 // State decisions live in opencode-state.js, which is pure and unit tested.
+//
+// OpenCode V2 loads this file through its default export (`id` + `setup`).
+// OpenCode V1 loads it through the `SpacesAgent` named export (or the
+// default export's `server` function on 1.18.29+). Keep all three working.
 
 import { spawn, spawnSync } from "node:child_process"
 import { readFileSync } from "node:fs"
@@ -81,7 +85,9 @@ function sendSync(session, state, pids) {
   } catch {}
 }
 
-export const SpacesAgent = async () => {
+// Shared reporter core: per-session state machine plus the pid list.
+// V1 (`SpacesAgent`) and V2 (`setup`) are thin adapters over this.
+function createReporter() {
   const pids = pidChain()
   const sessions = new Map()
   const timers = new Map()
@@ -96,6 +102,36 @@ export const SpacesAgent = async () => {
   function forgetPermission(session) {
     permIds.delete(session)
     permBare.delete(session)
+  }
+
+  function cancel(session) {
+    const timer = timers.get(session)
+    if (timer) {
+      clearTimeout(timer)
+      timers.delete(session)
+    }
+  }
+
+  function apply(session, signal) {
+    if (!session) return
+    const next = reduce(sessions.get(session), signal)
+    sessions.set(session, next)
+
+    if (needsWaitTimer(next)) {
+      if (!timers.has(session)) {
+        timers.set(
+          session,
+          setTimeout(() => {
+            timers.delete(session)
+            apply(session, "timer")
+          }, WAIT_DELAY),
+        )
+      }
+    } else {
+      cancel(session)
+    }
+
+    if (next.emit) send(session, next.emit, pids)
   }
 
   function notePermission(session, id) {
@@ -137,45 +173,17 @@ export const SpacesAgent = async () => {
     apply(session, "replied")
   }
 
-  function cancel(session) {
-    const timer = timers.get(session)
-    if (timer) {
-      clearTimeout(timer)
-      timers.delete(session)
-    }
-  }
-
-  function apply(session, signal) {
-    if (!session) return
-    const next = reduce(sessions.get(session), signal)
-    sessions.set(session, next)
-
-    if (needsWaitTimer(next)) {
-      if (!timers.has(session)) {
-        timers.set(
-          session,
-          setTimeout(() => {
-            timers.delete(session)
-            apply(session, "timer")
-          }, WAIT_DELAY),
-        )
-      }
-    } else {
-      cancel(session)
-    }
-
-    if (next.emit) send(session, next.emit, pids)
-  }
-
   function normalize(type, properties = {}) {
     const session = properties.sessionID
     if (!session) return
     switch (type) {
       case "permission.updated":
       case "permission.asked":
+      case "permission.v2.asked":
         notePermission(session, properties.id)
         break
       case "permission.replied":
+      case "permission.v2.replied":
         noteReplied(session, properties.requestID)
         break
       case "session.status":
@@ -193,46 +201,116 @@ export const SpacesAgent = async () => {
     }
   }
 
-  // dispose covers a normal quit. This is the net for a hard exit, where the
-  // bar would otherwise keep a stale "working" badge on a dead window.
-  // Synchronous: async spawns never flush inside an exit handler.
-  process.once("exit", () => {
+  // V2 events carry the payload in `data`; V1 used `properties`.
+  function normalizeEvent(event) {
+    if (!event) return
+    try {
+      normalize(event.type, event.data ?? event.properties ?? {})
+    } catch {}
+  }
+
+  function sendAllEndSync() {
     for (const [session] of sessions) {
       cancel(session)
       sendSync(session, "end", pids)
     }
+  }
+
+  function dispose() {
+    for (const [session] of sessions) {
+      cancel(session)
+      forgetPermission(session)
+      send(session, "end", pids)
+    }
+    sessions.clear()
+  }
+
+  return { pids, apply, notePermission, noteReplied, normalize, normalizeEvent, sendAllEndSync, dispose }
+}
+
+export const SpacesAgent = async () => {
+  const reporter = createReporter()
+
+  // dispose covers a normal quit. This is the net for a hard exit, where the
+  // bar would otherwise keep a stale "working" badge on a dead window.
+  // Synchronous: async spawns never flush inside an exit handler.
+  process.once("exit", () => {
+    reporter.sendAllEndSync()
   })
 
   return {
     event: async ({ event } = {}) => {
       if (!event) return
-      try {
-        normalize(event.type, event.properties)
-      } catch {}
+      reporter.normalizeEvent(event)
     },
 
     "chat.message": async (input) => {
-      apply(input && input.sessionID, "prompt")
+      reporter.apply(input && input.sessionID, "prompt")
     },
 
     "tool.execute.after": async (input) => {
-      apply(input && input.sessionID, "tool")
+      reporter.apply(input && input.sessionID, "tool")
     },
 
     "permission.ask": async (input, output) => {
       if (output && output.status !== "ask") return
       // input.id is optional in older opencode; without it the request still
       // counts, and its event twin adopts the count when it arrives with one.
-      notePermission(input && input.sessionID, input && input.id)
+      reporter.notePermission(input && input.sessionID, input && input.id)
     },
 
     dispose: async () => {
-      for (const [session] of sessions) {
-        cancel(session)
-        forgetPermission(session)
-        send(session, "end", pids)
-      }
-      sessions.clear()
+      reporter.dispose()
     },
   }
+}
+
+// OpenCode V2 entrypoint. Plain object (no @opencode/plugin import) so the
+// reporter has no new runtime dependency.
+export default {
+  id: PLUGIN_ID,
+
+  async setup(ctx) {
+    const reporter = createReporter()
+
+    await ctx.session.hook("prompt", (event) => {
+      reporter.apply(event && event.sessionID, "prompt")
+    })
+
+    await ctx.tool.hook("execute.after", (event) => {
+      reporter.apply(event && event.sessionID, "tool")
+    })
+
+    // Permissions come from the event stream alone. Registering the
+    // `permission.evaluate` hook too would count each request twice: the hook
+    // carries a tool call id while the event carries a permission request id,
+    // so the V1 hook/event dedup cannot pair them.
+    const controller = new AbortController()
+    void (async () => {
+      try {
+        for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+          reporter.normalizeEvent(event)
+        }
+      } catch {}
+    })()
+
+    // Net for a hard exit, where the bar would otherwise keep a stale
+    // "working" badge on a dead window. Synchronous: async spawns never
+    // flush inside an exit handler.
+    const onExit = () => {
+      reporter.sendAllEndSync()
+    }
+    process.once("exit", onExit)
+
+    return () => {
+      controller.abort()
+      process.removeListener("exit", onExit)
+      reporter.dispose()
+    }
+  },
+
+  // OpenCode V1 (1.18.29+) object entrypoint: same hooks as SpacesAgent.
+  async server() {
+    return SpacesAgent()
+  },
 }
