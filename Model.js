@@ -19,6 +19,7 @@ var DEFAULTS = {
   activeStyle: "subtle",      // "subtle" | "solid" | "accent"
   pillBackground: true,       // quiet fill behind occupied/hovered pills
   labelStyle: "number",       // "number" | "glyph" | "none"
+  holdSuperNumbers: false,    // show workspace numbers while Super is held (needs bindings)
   animations: true,
   animationSpeed: "normal",   // "slow" | "normal" | "fast"
   scrollSwitch: true,
@@ -78,6 +79,7 @@ function resolveSettings(raw) {
     activeStyle: oneOf(s.activeStyle, ACTIVE_STYLES, d.activeStyle),
     pillBackground: bool(s.pillBackground, d.pillBackground),
     labelStyle: oneOf(s.labelStyle, LABEL_STYLES, d.labelStyle),
+    holdSuperNumbers: bool(s.holdSuperNumbers, d.holdSuperNumbers),
     animations: bool(s.animations, d.animations),
     animationSpeed: oneOf(s.animationSpeed, SPEEDS, d.animationSpeed),
     scrollSwitch: bool(s.scrollSwitch, d.scrollSwitch),
@@ -184,7 +186,11 @@ function iconItems(windows, groupApps, maxIcons) {
     var byApp = {}
     for (var i = 0; i < windows.length; i++) {
       var w = windows[i]
-      var k = appKey(w.appId) || w.address
+      var k = appKey(w.appId)
+      // The shell hosts more than one app under its own id, so each of its
+      // windows keeps its own item instead of collapsing into one.
+      if (k === "org.quickshell") k = ""
+      k = k || w.address
       var existing = byApp[k]
       if (!existing) {
         existing = { key: k, address: w.address, appId: w.appId, title: w.title, focused: w.focused, count: 1, addresses: [w.address] }

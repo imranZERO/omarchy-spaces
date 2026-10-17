@@ -17,6 +17,11 @@ import "Model.js" as Model
 // settings. Settings persist inline on this widget's shell.json entry.
 Panel {
   id: root
+  // True while Super is held (set over IPC by the Super key bindings).
+  property bool superHeld: false
+  // Numbers only show if the user turned the setting on, so the bindings
+  // do nothing for anyone who has not opted in.
+  readonly property bool numbersVisible: superHeld && cfg.holdSuperNumbers
   moduleName: "tornikegomareli.spaces"
   ipcTarget: "tornikegomareli.spaces"
   manageIpc: false
@@ -86,6 +91,7 @@ Panel {
   // Workspace focused before the current one, for "click active = go back".
   property int previousWorkspaceId: -1
   property int lastWorkspaceId: -1
+
   onCurrentWorkspaceIdChanged: {
     if (root.lastWorkspaceId > 0 && root.lastWorkspaceId !== root.currentWorkspaceId)
       root.previousWorkspaceId = root.lastWorkspaceId
@@ -404,14 +410,27 @@ Panel {
         root.setUrgent(event.data, true)
         break
       case "activewindowv2":
+        root.hideHeldNumbers()
         root.setUrgent(event.data, false)
         refreshDebounce.restart()
         break
       case "closewindow":
+        root.hideHeldNumbers()
         root.setUrgent(event.data, false)
         refreshDebounce.restart()
         break
+      case "workspace":
+      case "workspacev2":
+      case "openlayer":
+        // The Super release binding can be missed after another Super
+        // shortcut, so also hide the numbers on the next Hyprland event
+        // (workspace switch, launcher/menu opening, window focus/open/close).
+        root.hideHeldNumbers()
+        break
       case "openwindow":
+        root.hideHeldNumbers()
+        refreshDebounce.restart()
+        break
       case "movewindow":
       case "movewindowv2":
       case "changefloatingmode":
@@ -475,18 +494,30 @@ Panel {
     return Quickshell.iconPath(value, true)
   }
 
-  // Returns { source, name } for an app id; cached until icons rescan.
-  function appInfo(appId) {
+  // Returns { source, name } for a window; cached until icons rescan. The
+  // title matters for windows the shell itself hosts: they all report
+  // org.quickshell, a NoDisplay entry, while the title names the app inside,
+  // e.g. "Omamail" is omamail.desktop, so the window keeps its own icon.
+  function appInfo(appId, title) {
     root.iconRevision
     var key = Model.appKey(appId)
-    var cached = root.iconCache[key]
+    var label = String(title || "")
+    // The shell hosts more than one app under its own id, so the title, not
+    // the id, tells those windows apart; only they cache under a title key.
+    var shellKey = key === "org.quickshell" && label !== ""
+    var cacheKey = shellKey ? key + "\u0000" + label.toLowerCase() : key
+    var cached = root.iconCache[cacheKey]
     if (cached) return cached
 
     var entry = findDesktopEntry(appId)
+    if (shellKey) {
+      var titled = findDesktopEntry(label)
+      if (titled && !titled.noDisplay) entry = titled
+    }
     var source = iconUrl(entry && entry.icon ? entry.icon : appId)
     if (source === "" && key !== appId) source = iconUrl(key)
     var info = { source: source, name: entry && entry.name ? String(entry.name) : String(appId || "") }
-    root.iconCache[key] = info
+    root.iconCache[cacheKey] = info
     return info
   }
 
@@ -631,6 +662,22 @@ Panel {
 
   // ------------------------------------------------------------ IPC
 
+  function setNumbersHeld(held) {
+    if (held && !root.cfg.holdSuperNumbers) return
+    root.superHeld = held
+  }
+
+  function hideHeldNumbers() {
+    if (root.superHeld) root.superHeld = false
+  }
+
+  // One IPC handler serves every monitor's bar, so relay to all of them.
+  function relayNumbers(held) {
+    var items = root.bar && typeof root.bar.moduleWidgets === "function" ? root.bar.moduleWidgets(root.moduleName) : [root]
+    if (items.indexOf(root) === -1) items = items.concat([root])
+    for (var i = 0; i < items.length; i++) if (items[i] && typeof items[i].setNumbersHeld === "function") items[i].setNumbersHeld(held)
+  }
+
   IpcHandler {
     target: "tornikegomareli.spaces"
 
@@ -639,6 +686,8 @@ Panel {
     function show(): void { root.open() }
     function hide(): void { root.close() }
     function toggle(): void { root.toggle() }
+    function showNumbers(): void { root.relayNumbers(true) }
+    function hideNumbers(): void { root.relayNumbers(false) }
     function peek(workspace: string): string { return root.peek(workspace) ? "ok" : "empty" }
     function agent(session: string, state: string, pids: string): void {
       // One IPC handler serves every monitor's bar, so relay to all of them.
@@ -734,7 +783,7 @@ Panel {
         readonly property var workspace: root.workspaceMap[workspaceId] || ({ id: workspaceId, windows: [] })
         readonly property bool active: workspaceId === root.currentWorkspaceId
         readonly property bool occupied: workspace.windows.length > 0
-        readonly property bool hovered: pillHover.hovered
+        readonly property bool hovered: pillHover.hovered || pillMouse.containsMouse
         onHoveredChanged: root.pillHovered(pill, hovered)
         readonly property bool showApps: Model.showsApps(root.cfg, occupied, active, hovered)
         readonly property bool urgent: {
@@ -753,7 +802,11 @@ Panel {
         }
         readonly property var itemKeys: iconData.items.map(function(item) { return item.key })
         readonly property color textColor: active ? root.activeText() : root.fg
-        readonly property string label: Model.workspaceLabel(workspaceId, active, root.cfg.labelStyle)
+        readonly property string label: Model.workspaceLabel(
+          workspaceId,
+          active,
+          root.numbersVisible ? "number" : root.cfg.labelStyle
+        )
         readonly property real pad: Style.space(label === "" ? 3 : root.metrics.pad)
 
         // Appear animation lives on the delegate: positioner add transitions
@@ -807,9 +860,14 @@ Panel {
 
         HoverHandler { id: pillHover }
 
+        // Extend the pointer target to the bar edges while keeping the pill inset.
         MouseArea {
           id: pillMouse
           anchors.fill: parent
+          anchors.leftMargin: root.vertical ? -pillFlow.anchors.leftMargin : 0
+          anchors.rightMargin: root.vertical ? -(root.width - root.pillThickness - pillFlow.anchors.leftMargin) : 0
+          anchors.topMargin: root.vertical ? 0 : -pillFlow.anchors.topMargin
+          anchors.bottomMargin: root.vertical ? 0 : -(root.height - root.pillThickness - pillFlow.anchors.topMargin)
           hoverEnabled: true
           acceptedButtons: Qt.LeftButton
           cursorShape: Qt.PointingHandCursor
@@ -874,7 +932,7 @@ Panel {
 
                   required property var modelData
                   readonly property var item: pill.itemMap[modelData] || null
-                  readonly property var info: item ? root.appInfo(item.appId) : ({ source: "", name: "" })
+                  readonly property var info: item ? root.appInfo(item.appId, item.title) : ({ source: "", name: "" })
                   readonly property bool focusedHere: !!item && item.focused && pill.active
                   readonly property bool highlightFocused: focusedHere && pill.itemKeys.length > 1
                   readonly property string titleText: root.cfg.focusedTitle && focusedHere && !root.vertical
@@ -1352,7 +1410,7 @@ Panel {
 
           // App badge in the corner, so small thumbnails stay identifiable.
           Rectangle {
-            readonly property var info: thumb.win ? root.appInfo(thumb.win.appId) : null
+            readonly property var info: thumb.win ? root.appInfo(thumb.win.appId, thumb.win.title) : null
             visible: info !== null && thumb.width > 28 && thumb.height > 22
             anchors.left: parent.left
             anchors.bottom: parent.bottom

@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.4.0
+
+- Show workspace numbers while holding Super: an opt-in setting under
+  Workspaces for people who hide numbers with the None or Glyph label style.
+  It needs two Hyprland bindings, listed in the README, and every other Super
+  shortcut works as before (#16, #21, @mshareef-git)
+- Pushing the pointer to the screen edge still hovers and selects the
+  workspace under it: each workspace's target now spans the full bar
+  thickness, while the pill looks the same (#25, @afrojun)
+- Windows the shell itself hosts, such as Omamail, show their own app icon
+  instead of the shell's, and each keeps its own icon instead of collapsing
+  into one (#23, @FarzadHayat)
+
 ## 1.3.0
 
 - Agent status for Cursor: register `hooks/cursor-reporter.js` in
