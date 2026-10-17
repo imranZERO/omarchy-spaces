@@ -72,6 +72,8 @@ ln -sfn ~/.config/omarchy/plugins/tornikegomareli.spaces/hooks/opencode-plugin.j
         ~/.config/opencode/plugins/spaces.js
 ```
 
+If you happen to run several OpenCode TUIs at once, each one badges only the sessions it displays — a session's badge always pins to the terminal showing it instead of flickering between windows.
+
 The links point into the installed plugin, so `omarchy plugin update tornikegomareli.spaces` updates the reporter too. Restart your OpenCode frontend (CLI plugins load at startup), run a prompt, and the terminal icon spins in the bar while it works and gets a check mark when it stops.
 
 `working` and `done` are reported as OpenCode works. `waiting` needs a permission prompt, so with `--auto` it rarely appears: OpenCode answers its own permission requests in milliseconds, and the plugin waits 1.5s before showing a `!` so a prompt answered instantly never flashes. To see it, run `opencode` without `--auto` and ask it to do something that needs approval.

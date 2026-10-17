@@ -75,6 +75,98 @@ async function main() {
     await cleanup()
   })
 
+  await test("the TUI companion only reports for sessions it shows", async () => {
+    const seen = []
+    const cleanup = await tuiMod.default.setup(
+      {
+        ui: {
+          router: { current: () => ({ type: "session", sessionID: "s1" }) },
+          tabs: { list: () => [{ sessionID: "s1" }] },
+        },
+        data: {
+          session: { root: (id) => id },
+          listen: (cb) => {
+            cb({ details: { type: "session.step.started", data: { sessionID: "s1" } } })
+            cb({ details: { type: "session.step.started", data: { sessionID: "foreign" } } })
+            return () => {}
+          },
+        },
+      },
+      { send: (session, state) => seen.push(`${session}=${state}`) },
+    )
+    await cleanup()
+    assert.deepStrictEqual(seen, ["s1=working", "s1=end"])
+  })
+
+  await test("subagent sessions are reported under their root", async () => {
+    const seen = []
+    const cleanup = await tuiMod.default.setup(
+      {
+        ui: {
+          router: { current: () => ({ type: "session", sessionID: "s1" }) },
+          tabs: { list: () => [] },
+        },
+        data: {
+          session: {
+            root: (id) => (id.startsWith("sub") ? "s1" : id),
+          },
+          listen: (cb) => {
+            cb({ details: { type: "session.tool.called", data: { sessionID: "sub-agent" } } })
+            return () => {}
+          },
+        },
+      },
+      { send: (session, state) => seen.push(`${session}=${state}`) },
+    )
+    await cleanup()
+    assert.deepStrictEqual(seen, ["s1=working", "s1=end"])
+  })
+
+  await test("a claimed session stays claimed after navigating away", async () => {
+    const seen = []
+    let route = { type: "session", sessionID: "s1" }
+    const cleanup = await tuiMod.default.setup(
+      {
+        ui: {
+          router: { current: () => route },
+          tabs: { list: () => [] },
+        },
+        data: {
+          session: { root: (id) => id },
+          listen: (cb) => {
+            cb({ details: { type: "session.step.started", data: { sessionID: "s1" } } })
+            route = { type: "home" }
+            cb({ details: { type: "session.tool.called", data: { sessionID: "s1" } } })
+            cb({ details: { type: "session.step.ended", data: { sessionID: "s1" } } })
+            return () => {}
+          },
+        },
+      },
+      { send: (session, state) => seen.push(`${session}=${state}`) },
+    )
+    await cleanup()
+    assert.deepStrictEqual(seen, ["s1=working", "s1=end"])
+  })
+
+  await test("outside a TUI the reporter is unscoped (opencode run)", async () => {
+    const seen = []
+    let feed
+    const cleanup = await tuiMod.default.setup(
+      {
+        data: {
+          listen: (cb) => {
+            feed = cb
+            return () => {}
+          },
+        },
+      },
+      { send: (session, state) => seen.push(`${session}=${state}`) },
+    )
+    feed({ details: { type: "session.step.started", data: { sessionID: "any-run" } } })
+    await cleanup()
+    assert.deepStrictEqual(seen, ["any-run=working", "any-run=end"])
+  })
+
   process.exit(failed ? 1 : 0)
 }
 

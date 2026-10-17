@@ -31,7 +31,7 @@
 // Restart the OpenCode TUI, run a prompt, and the terminal badges while it
 // works.
 
-import { spawn, spawnSync } from "node:child_process"
+import { spawn } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { WAIT_DELAY, needsWaitTimer, reduce } from "./opencode-state.js"
 
@@ -76,17 +76,12 @@ function send(session, state, pids) {
   } catch {}
 }
 
-function sendSync(session, state, pids) {
-  if (!session || !state) return
-  try {
-    spawnSync("omarchy-shell", [PLUGIN_ID, "agent", String(session), state, pids.join(",")], {
-      stdio: "ignore",
-    })
-  } catch {}
-}
-
-function createReporter() {
+function createReporter(options = {}) {
   const pids = pidChain()
+  const deliver = options.deliver || send
+  // Optional ownership scope: maps a session to its owning session id (the
+  // TUI-displayed root), or to undefined for foreign sessions.
+  const canonical = options.canonical
   const sessions = new Map()
   const timers = new Map()
   // Fallback done timers: some sessions (e.g. API-driven ones) never emit
@@ -151,7 +146,9 @@ function createReporter() {
       cancel(session)
     }
 
-    if (next.emit) send(session, next.emit, pids)
+    if (next.emit) {
+      deliver(session, next.emit, pids)
+    }
   }
 
   function notePermission(session, id) {
@@ -193,8 +190,13 @@ function createReporter() {
 
   // V2 TUI events carry the payload in `data` ({details} from data.listen).
   function normalize(type, properties = {}) {
-    const session = properties.sessionID
+    let session = properties.sessionID
     if (!session) return
+    if (canonical) {
+      const owner = canonical(session)
+      if (!owner) return
+      session = owner
+    }
     switch (type) {
       case "permission.asked":
         notePermission(session, properties.id)
@@ -214,7 +216,7 @@ function createReporter() {
         cancelDoneTimer(session)
         forgetPermission(session)
         sessions.delete(session)
-        send(session, "end", pids)
+        deliver(session, "end", pids)
         break
       // Working signals: a new turn starting or progressing. Duplicates are
       // deduped by the state machine, so over-mapping is safe. Turn end is
@@ -253,7 +255,7 @@ function createReporter() {
       cancel(session)
       cancelDoneTimer(session)
       forgetPermission(session)
-      send(session, "end", pids)
+      deliver(session, "end", pids)
     }
     sessions.clear()
   }
@@ -261,12 +263,64 @@ function createReporter() {
   return { pids, apply, normalize, normalizeEvent, dispose }
 }
 
+// Ownership scope: which sessions belong to this TUI. Every open TUI client
+// receives the full event stream, so an unscoped reporter would claim every
+// session from all of them - and each reporter's pid chain pins its own
+// terminal, so the widget's window for the session would flip between the
+// competing reporters, frequently hiding the badge. Scoping uses what the
+// TUI shows (the current route plus any open session tabs) and maps foreign
+// sessions, including subagents, back to their root. Outside a TUI
+// (headless `opencode run`, which has no owner) nothing is scoped, because
+// the run's pid chain still reaches its terminal.
+function ownership(context) {
+  // Sticky: sessions this TUI has ever shown. If the user navigates to the
+  // home screen (or another tab) while an agent runs, live routes and tabs
+  // stop listing the session, and a purely live scope would drop its signals
+  // and freeze the badge on "working". A session is released by
+  // session.deleted or when the TUI unloads, not by navigation.
+  const owned = new Set()
+  const scan = () => {
+    try {
+      const ui = context && context.ui
+      const route = ui?.router?.current?.()
+      if (route && route.type === "session" && route.sessionID) owned.add(route.sessionID)
+      for (const tab of ui?.tabs?.list?.() ?? []) {
+        if (tab && tab.sessionID) owned.add(tab.sessionID)
+      }
+    } catch {}
+  }
+  const isShown = () => {
+    const ui = context && context.ui
+    return (
+      typeof ui?.router?.current === "function" || typeof ui?.tabs?.list === "function"
+    )
+  }
+  if (!isShown()) return undefined
+  if (!owned.size) scan()
+  return (sessionID) => {
+    scan()
+    if (owned.has(sessionID)) return sessionID
+    try {
+      const root = context?.data?.session?.root?.(sessionID)
+      return typeof root === "string" && root && owned.has(root) ? root : undefined
+    } catch {
+      return undefined
+    }
+  }
+}
+
 // CLI/TUI entrypoint: plain object, no @opencode/plugin dependency.
 export default {
   id: `${PLUGIN_ID}.tui`,
 
-  setup(context) {
-    const reporter = createReporter()
+  // `internal` is for tests only: it overrides how reports leave the process,
+  // so tests can collect reports without spawning omarchy-shell.
+  setup(context, internal = {}) {
+    const canonical = ownership(context)
+    const reporter = createReporter({
+      canonical,
+      deliver: internal.send,
+    })
 
     // Every server event, including session/permission updates.
     const stop =
