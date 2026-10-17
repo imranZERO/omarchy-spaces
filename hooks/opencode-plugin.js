@@ -16,17 +16,23 @@
 // The pid list is this process and its ancestors; the widget matches them
 // against terminal windows to find which one to badge.
 //
-// Install by linking the installed plugin's copy into OpenCode, so
-// `omarchy plugin update` keeps the reporter current:
+// Install (OpenCode 1.x only; see below) by linking the installed plugin's
+// copy into OpenCode, so `omarchy plugin update` keeps the reporter current:
 //
 //   ln -sfn ~/.config/omarchy/plugins/tornikegomareli.spaces/hooks/opencode-plugin.js \
 //           ~/.config/opencode/plugins/spaces.js
 //
 // State decisions live in opencode-state.js, which is pure and unit tested.
 //
-// OpenCode V2 loads this file through its default export (`id` + `setup`).
-// OpenCode V1 loads it through the `SpacesAgent` named export (or the
-// default export's `server` function on 1.18.29+). Keep all three working.
+// Whether this file reports depends on the opencode version. OpenCode 1.x
+// runs plugins inside the terminal's own opencode process, so the pid chain
+// here reaches the terminal window and reporting works as-is: through the
+// `SpacesAgent` named export on any 1.x, and through the default export's
+// `server()` object entrypoint (documented from 1.18.29; the loaders back to
+// 1.14 reach it the same way). OpenCode v2 runs server plugins in its shared
+// background service instead, where the pid chain can never match a window,
+// so `setup()` stays silent here and the TUI companion hooks/opencode-tui.js
+// does the reporting from the terminal side.
 
 import { spawn, spawnSync } from "node:child_process"
 import { readFileSync } from "node:fs"
@@ -266,50 +272,20 @@ export const SpacesAgent = async () => {
 }
 
 // OpenCode V2 entrypoint. Plain object (no @opencode/plugin import) so the
-// reporter has no new runtime dependency.
+// plugin has no new runtime dependency. V2 requires the default export to
+// exist, but it must report nothing: v2 runs server plugins in the shared
+// background service, whose process tree is not under the terminal, and the
+// bar keeps a badge only while the latest report's pid chain matches a
+// window. Reporting from here would unbadge the terminal whenever a service
+// report landed after the TUI reporter's, so on v2 the TUI companion
+// (hooks/opencode-tui.js) is the only reporter.
 export default {
   id: PLUGIN_ID,
 
-  async setup(ctx) {
-    const reporter = createReporter()
+  async setup() {},
 
-    await ctx.session.hook("prompt", (event) => {
-      reporter.apply(event && event.sessionID, "prompt")
-    })
-
-    await ctx.tool.hook("execute.after", (event) => {
-      reporter.apply(event && event.sessionID, "tool")
-    })
-
-    // Permissions come from the event stream alone. Registering the
-    // `permission.evaluate` hook too would count each request twice: the hook
-    // carries a tool call id while the event carries a permission request id,
-    // so the V1 hook/event dedup cannot pair them.
-    const controller = new AbortController()
-    void (async () => {
-      try {
-        for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-          reporter.normalizeEvent(event)
-        }
-      } catch {}
-    })()
-
-    // Net for a hard exit, where the bar would otherwise keep a stale
-    // "working" badge on a dead window. Synchronous: async spawns never
-    // flush inside an exit handler.
-    const onExit = () => {
-      reporter.sendAllEndSync()
-    }
-    process.once("exit", onExit)
-
-    return () => {
-      controller.abort()
-      process.removeListener("exit", onExit)
-      reporter.dispose()
-    }
-  },
-
-  // OpenCode V1 (1.18.29+) object entrypoint: same hooks as SpacesAgent.
+  // OpenCode V1 object entrypoint (documented from 1.18.29; the loaders
+  // reach it the same way back to 1.4): same hooks as SpacesAgent.
   async server() {
     return SpacesAgent()
   },

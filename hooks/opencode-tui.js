@@ -24,9 +24,10 @@
 //
 //   { "plugins": ["~/.config/opencode/plugins/spaces-tui"] }
 //
-// (Use $HOME instead of ~ if OpenCode does not expand it.) Keep the server
-// plugin (opencode-plugin.js) linked too: it still reports state, and the
-// widget keeps the TUI-pinned window while both report the same session.
+// (Use $HOME instead of ~ if OpenCode does not expand it.) On OpenCode v2
+// this file does the reporting and the server plugin (opencode-plugin.js)
+// stays silent, so this link is the only one v2 needs. On OpenCode 1.x, which
+// runs plugins inside the terminal itself, the server plugin reports instead.
 // Restart the OpenCode TUI, run a prompt, and the terminal badges while it
 // works.
 
