@@ -33,7 +33,8 @@ var DEFAULTS = {
   previews: true,             // live preview of a workspace on hover
   previewSize: "medium",      // "small" | "medium" | "large"
   previewLive: true,          // keep previews streaming; false = one frame
-  agentStatus: true           // badges for coding agents running in terminals
+  agentStatus: true,          // badges for coding agents running in terminals
+  agentIcons: true            // agent logos on terminals running Claude Code, Codex, Grok
 }
 
 var SHOW_APPS = ["all", "active", "hover", "hoverOnly"]
@@ -93,7 +94,8 @@ function resolveSettings(raw) {
     previews: bool(s.previews, d.previews),
     previewSize: oneOf(s.previewSize, PREVIEW_SIZES, d.previewSize),
     previewLive: bool(s.previewLive, d.previewLive),
-    agentStatus: bool(s.agentStatus, d.agentStatus)
+    agentStatus: bool(s.agentStatus, d.agentStatus),
+    agentIcons: bool(s.agentIcons, d.agentIcons)
   }
 }
 
@@ -151,6 +153,32 @@ function workspaceLabel(id, focused, style) {
   if (style === "none") return ""
   if (style === "glyph" && focused) return "󱓻"
   return id === 10 ? "0" : String(id)
+}
+
+// Coding agents running in a terminal, told apart by the title each one sets.
+// Titles are the only signal: Ghostty runs every window from one process.
+//   Claude Code: "<status glyph> <topic>"
+//   Codex: "<braille spinner> <project>", "<thread> | <project>" or
+//          "[ . ] Action Required | ..."
+//   Grok: "grok"
+var AGENTS = [
+  { id: "agent.claude", name: "Claude Code", icon: "claude", light: false,
+    title: /^[\u2733\u2722\u2736\u273b\u273d\u00b7\u25d0-\u25d3\u23fa] |\bClaude Code\b/ },
+  { id: "agent.codex", name: "Codex", icon: "codex", light: true,
+    title: /^[\u2801-\u28ff] |^\[ *\S+ *\] Action Required\b| \| [^|]+$/ },
+  { id: "agent.grok", name: "Grok", icon: "grok", light: true,
+    title: /^grok(\s|$)/i }
+]
+
+function agentFor(appId) {
+  for (var i = 0; i < AGENTS.length; i++) if (AGENTS[i].id === appId) return AGENTS[i]
+  return null
+}
+
+function agentAppId(appId, title) {
+  var t = String(title || "")
+  for (var i = 0; i < AGENTS.length; i++) if (AGENTS[i].title.test(t)) return AGENTS[i].id
+  return appId
 }
 
 // Stable key identifying "the same app" across windows.
@@ -611,6 +639,7 @@ if (typeof module !== "undefined") {
     agentWindowStates: agentWindowStates, agentPinAddress: agentPinAddress,
     parsePids: parsePids, normalizeAgentState: normalizeAgentState,
     agentProcessIds: agentProcessIds, pruneDeadAgents: pruneDeadAgents,
+    agentAppId: agentAppId, agentFor: agentFor,
     previewWidth: previewWidth, previewDimensions: previewDimensions, monitorArea: monitorArea, previewLayout: previewLayout, durationFor: durationFor,
     workspaceIds: workspaceIds, workspaceLabel: workspaceLabel, appKey: appKey,
     sortWindows: sortWindows, iconItems: iconItems, truncate: truncate,

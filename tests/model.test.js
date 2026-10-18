@@ -388,4 +388,21 @@ test("window titles render as plain text", () => {
   for (const b of titled) assert.match(b, /textFormat:\s*Text\.PlainText/, b.split("\n").find((l) => /text:/.test(l)).trim())
 })
 
+test("agentAppId recognises Claude Code, Codex and Grok terminals", () => {
+  const g = "com.mitchellh.ghostty"
+  assert.strictEqual(M.agentAppId(g, "\u25d1 Omarchy plugin skills"), "agent.claude")
+  assert.strictEqual(M.agentAppId(g, "\u2733 Fix the bar"), "agent.claude")
+  assert.strictEqual(M.agentAppId(g, "Claude Code"), "agent.claude")
+  assert.strictEqual(M.agentAppId(g, "\u2838 Add snapping and dock controls | tcballard"), "agent.codex")
+  assert.strictEqual(M.agentAppId(g, "\u280b scratchpad"), "agent.codex")
+  assert.strictEqual(M.agentAppId(g, "Collect iPad boot logs | tcballard"), "agent.codex")
+  assert.strictEqual(M.agentAppId(g, "[ . ] Action Required | Build Omarchy shortcut wheel | tcballard"), "agent.codex")
+  assert.strictEqual(M.agentAppId(g, "grok"), "agent.grok")
+  assert.strictEqual(M.agentAppId(g, "~/code"), g)
+  assert.strictEqual(M.agentAppId(g, "grokking notes"), g)
+  assert.strictEqual(M.agentAppId(g, ""), g)
+  assert.strictEqual(M.agentFor("agent.grok").name, "Grok")
+  assert.strictEqual(M.agentFor(g), null)
+})
+
 if (failed) { console.log(failed + " failed"); process.exit(1) }
