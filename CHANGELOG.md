@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.5.0
+
+- Custom workspace labels: pick Custom under Appearance → Workspace label,
+  then give each workspace its own text, emoji or Nerd Font glyph, and
+  optionally one for whichever workspace is focused. An empty field keeps the
+  number, and holding Super still shows numbers (#28, @TMartinPPC)
+- Omarchy 4.5 gives every monitor its own workspaces 1–10. With "Only this
+  monitor's workspaces" on, each bar numbers its monitor's workspaces 1–10,
+  keeps that monitor's empty slots, and clicking one goes to it on that
+  monitor. Workspaces visiting from an unplugged monitor follow with their
+  global numbers. Older Omarchy versions are unchanged (#2, #30, @pomartel)
+- A newly installed app, such as an Omarchy web app, shows its icon right
+  away instead of a letter until the shell restarts (#31, @dev-learner-supreme)
+
 ## 1.4.0
 
 - Show workspace numbers while holding Super: an opt-in setting under
@@ -111,3 +125,4 @@ First release.
 - Settings panel: when icons show, icon style and size, grouping by app,
   active style, labels, density, urgent highlights, tooltips, animations
 - Icons for Chromium web apps and apps missing from the icon theme
+

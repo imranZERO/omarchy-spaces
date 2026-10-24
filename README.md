@@ -156,6 +156,14 @@ If you added the Cursor hook, remove those entries from `~/.cursor/hooks.json`.
 
 Settings are organised into App icons, Windows, Appearance, Workspaces, Previews, and Behaviour. Each section fits its controls without an internal scroll area, and changes apply automatically and are saved to `~/.config/omarchy/shell.json`.
 
+On Omarchy 4.5, enabling **Only this monitor's workspaces** reads Omarchy's
+`monitor-workspaces` state file to display monitor-local numbers. Workspaces
+11–15 appear as 1–5 on the second monitor, and **Always show workspaces**
+keeps that monitor's own empty slots visible. Clicking a local slot uses
+Omarchy's monitor-aware workspace action. Workspaces visiting from another
+monitor keep their global labels. Without a matching monitor entry in the
+state file, or with per-monitor filtering disabled, global numbering remains.
+
 Use Tab / Shift+Tab to move through controls and Enter / Space to activate them. On sliders, use Left / Right to adjust by one, or Home / End for the minimum or maximum. Reset to defaults asks for confirmation before resetting all sections.
 
 To open settings with a key, add this to `~/.config/hypr/bindings.lua`:
@@ -238,3 +246,4 @@ After code changes, run `omarchy restart shell`.
 ## License
 
 [MIT License](LICENSE).
+

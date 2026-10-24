@@ -90,6 +90,22 @@ Panel {
     return Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : -1
   }
 
+  // Omarchy 4.5 assigns each monitor a block of ten global workspace IDs.
+  // Only opt in when its state file identifies this monitor; older setups
+  // and the all-monitor view keep their existing global numbering.
+  property var workspaceBlocks: ({})
+  readonly property int workspaceBlock: Model.monitorWorkspaceBlock(
+    root.workspaceBlocks, root.monitor ? root.monitor.name : "", cfg.perMonitor)
+
+  FileView {
+    path: (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/omarchy/monitor-workspaces"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoadFailed: root.workspaceBlocks = Model.parseWorkspaceBlocks("")
+    onLoaded: root.workspaceBlocks = Model.parseWorkspaceBlocks(text())
+  }
+
   // Workspace focused before the current one, for "click active = go back".
   property int previousWorkspaceId: -1
   property int lastWorkspaceId: -1
@@ -348,10 +364,15 @@ Panel {
     var occupied = ({})
     for (var id in workspaceMap) occupied[id] = workspaceMap[id].windows.length
     var active = root.currentWorkspaceId > 0 ? [root.currentWorkspaceId] : []
-    return Model.workspaceIds(occupied, active, cfg.persistentWorkspaces, cfg.hideEmpty)
+    return Model.workspaceIds(occupied, active, cfg.persistentWorkspaces, cfg.hideEmpty, root.workspaceBlock)
   }
 
   function focusWorkspace(id) {
+    if (root.workspaceBlock >= 0 && Model.workspaceBlockOf(id) === root.workspaceBlock) {
+      var expression = "o.workspaces.focus(" + Model.workspaceSlotOf(id) + ", " + JSON.stringify(root.monitor.name) + ")"
+      run("hyprctl dispatch " + Util.shellQuote(expression))
+      return
+    }
     run("hyprctl dispatch " + Util.shellQuote("hl.dsp.focus({ workspace = \"" + id + "\" })"))
   }
 
@@ -554,7 +575,18 @@ Panel {
     onExited: {
       root.iconIndex = root.pendingIconIndex
       root.invalidateIcons()
+      // Deferred so the process has fully stopped before it is started again.
+      if (root.iconRescanPending) Qt.callLater(root.rescanIcons)
     }
+  }
+
+  // A scan already running may have passed the directory a new icon landed
+  // in, so a request during one queues another for when it exits.
+  property bool iconRescanPending: false
+
+  function rescanIcons() {
+    root.iconRescanPending = iconScan.running
+    if (!iconScan.running) iconScan.running = true
   }
 
   Connections {
@@ -565,7 +597,10 @@ Panel {
   Timer {
     id: iconDebounce
     interval: 1500
-    onTriggered: root.invalidateIcons()
+    // New entries usually bring their icons, e.g. `omarchy webapp install`
+    // saves one under ~/.local/share/icons, a directory that may not have
+    // existed at startup. The scan invalidates the cache when it exits.
+    onTriggered: root.rescanIcons()
   }
 
   Component.onCompleted: {
@@ -806,11 +841,18 @@ Panel {
         }
         readonly property var itemKeys: iconData.items.map(function(item) { return item.key })
         readonly property color textColor: active ? root.activeText() : root.fg
-        readonly property string label: Model.workspaceLabel(
-          workspaceId,
-          active,
-          root.numbersVisible ? "number" : root.cfg.labelStyle
-        )
+        // Custom icon first; the pill keeps its number/glyph label when none
+        // is set. Held Super always shows plain numbers.
+        readonly property string label: {
+          var custom = Model.workspaceIcon(root.cfg, workspaceId, active)
+          if (custom !== "" && !root.numbersVisible) return custom
+          return Model.workspaceLabel(
+            workspaceId,
+            active,
+            root.numbersVisible ? "number" : root.cfg.labelStyle,
+            root.workspaceBlock
+          )
+        }
         readonly property real pad: Style.space(label === "" ? 3 : root.metrics.pad)
 
         // Appear animation lives on the delegate: positioner add transitions
@@ -893,6 +935,7 @@ Panel {
           Text {
             visible: pill.label !== ""
             text: pill.label
+            textFormat: Text.PlainText
             color: pill.textColor
             opacity: pill.occupied || pill.active ? 1 : 0.5
             font.family: root.fontFamily
@@ -1484,3 +1527,4 @@ Panel {
     }
   }
 }
+

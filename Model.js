@@ -18,7 +18,7 @@ var DEFAULTS = {
   titleLength: 24,
   activeStyle: "subtle",      // "subtle" | "solid" | "accent"
   pillBackground: true,       // quiet fill behind occupied/hovered pills
-  labelStyle: "number",       // "number" | "glyph" | "none"
+  labelStyle: "number",       // "number" | "glyph" | "none" | "custom"
   holdSuperNumbers: false,    // show workspace numbers while Super is held (needs bindings)
   animations: true,
   animationSpeed: "normal",   // "slow" | "normal" | "fast"
@@ -34,7 +34,10 @@ var DEFAULTS = {
   previewSize: "medium",      // "small" | "medium" | "large"
   previewLive: true,          // keep previews streaming; false = one frame
   agentStatus: true,          // badges for coding agents running in terminals
-  agentIcons: true            // agent logos on terminals running Claude Code, Codex, Grok
+  agentIcons: true,
+  activeIcon: "",             // replaces the focused pill's label; empty = off
+  wsIcon1: "", wsIcon2: "", wsIcon3: "", wsIcon4: "", wsIcon5: "",
+  wsIcon6: "", wsIcon7: "", wsIcon8: "", wsIcon9: "", wsIcon10: ""  // per-workspace labels; empty = number
 }
 
 var SHOW_APPS = ["all", "active", "hover", "hoverOnly"]
@@ -44,7 +47,7 @@ var ACTIVE_CLICKS = ["none", "previous"]
 var SETTINGS_BUTTONS = ["hover", "always", "never"]
 var PREVIEW_SIZES = ["small", "medium", "large"]
 var ACTIVE_STYLES = ["subtle", "solid", "accent"]
-var LABEL_STYLES = ["number", "glyph", "none"]
+var LABEL_STYLES = ["number", "glyph", "none", "custom"]
 var SPEEDS = ["slow", "normal", "fast"]
 
 function clampInt(value, min, max, fallback) {
@@ -95,7 +98,18 @@ function resolveSettings(raw) {
     previewSize: oneOf(s.previewSize, PREVIEW_SIZES, d.previewSize),
     previewLive: bool(s.previewLive, d.previewLive),
     agentStatus: bool(s.agentStatus, d.agentStatus),
-    agentIcons: bool(s.agentIcons, d.agentIcons)
+    agentIcons: bool(s.agentIcons, d.agentIcons),
+    activeIcon: clipIconString(s.activeIcon, d.activeIcon),
+    wsIcon1: clipIconString(s.wsIcon1, d.wsIcon1),
+    wsIcon2: clipIconString(s.wsIcon2, d.wsIcon2),
+    wsIcon3: clipIconString(s.wsIcon3, d.wsIcon3),
+    wsIcon4: clipIconString(s.wsIcon4, d.wsIcon4),
+    wsIcon5: clipIconString(s.wsIcon5, d.wsIcon5),
+    wsIcon6: clipIconString(s.wsIcon6, d.wsIcon6),
+    wsIcon7: clipIconString(s.wsIcon7, d.wsIcon7),
+    wsIcon8: clipIconString(s.wsIcon8, d.wsIcon8),
+    wsIcon9: clipIconString(s.wsIcon9, d.wsIcon9),
+    wsIcon10: clipIconString(s.wsIcon10, d.wsIcon10)
   }
 }
 
@@ -128,44 +142,103 @@ function normalizeAddress(address) {
   return String(address || "").toLowerCase().replace(/^0x/, "")
 }
 
+// Omarchy's state file maps connector names to blocks of ten workspaces.
+// Parse each snapshot afresh so removed monitors do not leave stale entries.
+function parseWorkspaceBlocks(text) {
+  var blocks = Object.create(null)
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var fields = lines[i].split("\t")
+    if (fields.length < 3 || !fields[1] || !/^\d+$/.test(fields[0])) continue
+    var block = Number(fields[0])
+    if (!Number.isSafeInteger(block) || !Number.isSafeInteger(block * 10 + 10)) continue
+    blocks[fields[1]] = block
+  }
+  return blocks
+}
+
+function monitorWorkspaceBlock(blocks, monitorName, perMonitor) {
+  if (!perMonitor || !blocks || !Object.prototype.hasOwnProperty.call(blocks, monitorName)) return -1
+  return blocks[monitorName]
+}
+
+function workspaceBlockOf(id) {
+  return Math.floor((id - 1) / 10)
+}
+
+function workspaceSlotOf(id) {
+  return (id - 1) % 10 + 1
+}
+
 // Workspace ids to render. `occupied` maps id -> window count for every
 // normal (positive id) workspace Hyprland knows about. `activeIds` are
 // workspaces that must stay visible even when empty (focused / on-screen).
-function workspaceIds(occupied, activeIds, persistent, hideEmpty) {
+function workspaceIds(occupied, activeIds, persistent, hideEmpty, block) {
   var ids = []
   function add(id) {
     if (id > 0 && ids.indexOf(id) === -1) ids.push(id)
   }
 
-  if (!hideEmpty) for (var p = 1; p <= persistent; p++) add(p)
+  var base = block >= 0 ? block * 10 : 0
+  if (!hideEmpty) for (var p = 1; p <= persistent; p++) add(base + p)
   for (var key in occupied) {
     var id = Number(key)
     if (occupied[key] > 0 || !hideEmpty) add(id)
   }
   for (var a = 0; a < activeIds.length; a++) add(activeIds[a])
 
-  ids.sort(function(l, r) { return l - r })
+  // With a block, the monitor's own workspaces come first and visiting ones
+  // after them, as in Omarchy's bar, so a guest never sits among the slots.
+  function guest(id) { return block >= 0 && workspaceBlockOf(id) !== block ? 1 : 0 }
+  ids.sort(function(l, r) { return guest(l) - guest(r) || l - r })
   return ids
 }
 
 // Label text for a workspace pill.
-function workspaceLabel(id, focused, style) {
+function workspaceLabel(id, focused, style, block) {
   if (style === "none") return ""
   if (style === "glyph" && focused) return "󱓻"
-  return id === 10 ? "0" : String(id)
+  var local = block >= 0 && workspaceBlockOf(id) === block
+  var number = local ? workspaceSlotOf(id) : id
+  return number === 10 ? "0" : String(number)
 }
 
-// Coding agents running in a terminal, told apart by the title each one sets.
-// Titles are the only signal: Ghostty runs every window from one process.
-//   Claude Code: "<status glyph> <topic>"
-//   Codex: "<braille spinner> <project>", "<thread> | <project>" or
-//          "[ . ] Action Required | ..."
-//   Grok: "grok"
+// Caps user-entered icon text at 32 graphemes, cutting without an ellipsis.
+// Non-string junk (numbers, null) falls back to the default, which keeps
+// malformed shell.json entries from leaking into labels.
+function clipIconString(value, fallback) {
+  if (typeof value !== "string") return fallback
+  var chars = graphemes(value)
+  return chars.length > 32 ? chars.slice(0, 32).join("") : chars.join("")
+}
+
+// Custom label for a workspace pill from the user's settings, or "" when none
+// applies (the pill then falls back to workspaceLabel). Only the "custom"
+// label style consults the icon fields; every other style keeps its stock
+// behaviour. A per-workspace icon is more specific than the active override,
+// so it wins even while focused.
+function workspaceIcon(settings, id, focused) {
+  if (settings.labelStyle !== "custom") return ""
+  var n = Number(id)
+  var icon = n >= 1 && n <= 10 ? settings["wsIcon" + n] : ""
+  if (icon) return clipIconString(icon, "")
+  return focused && settings.activeIcon ? clipIconString(settings.activeIcon, "") : ""
+}
+
+var TERMINAL_APP_IDS = [
+  "ghostty", "com.mitchellh.ghostty", "alacritty", "org.alacritty.alacritty",
+  "kitty", "net.kovidgoyal.kitty", "foot", "footclient",
+  "wezterm", "org.wezfurlong.wezterm", "org.gnome.terminal",
+  "gnome-terminal", "gnome-terminal-server", "org.gnome.console", "kgx",
+  "konsole", "org.kde.konsole", "xterm", "uxterm", "urxvt",
+  "st", "st-256color", "xfce4-terminal", "tilix", "com.gexperts.tilix"
+]
+
 var AGENTS = [
   { id: "agent.claude", name: "Claude Code", icon: "claude", light: false,
     title: /^[\u2733\u2722\u2736\u273b\u273d\u00b7\u25d0-\u25d3\u23fa] |\bClaude Code\b/ },
   { id: "agent.codex", name: "Codex", icon: "codex", light: true,
-    title: /^[\u2801-\u28ff] |^\[ *\S+ *\] Action Required\b| \| [^|]+$/ },
+    title: /^[\u2801-\u28ff] |^\[ *\S+ *\] Action Required\b/ },
   { id: "agent.grok", name: "Grok", icon: "grok", light: true,
     title: /^grok(\s|$)/i }
 ]
@@ -176,6 +249,7 @@ function agentFor(appId) {
 }
 
 function agentAppId(appId, title) {
+  if (TERMINAL_APP_IDS.indexOf(appKey(appId)) === -1) return appId
   var t = String(title || "")
   for (var i = 0; i < AGENTS.length; i++) if (AGENTS[i].title.test(t)) return AGENTS[i].id
   return appId
@@ -641,10 +715,13 @@ if (typeof module !== "undefined") {
     agentProcessIds: agentProcessIds, pruneDeadAgents: pruneDeadAgents,
     agentAppId: agentAppId, agentFor: agentFor,
     previewWidth: previewWidth, previewDimensions: previewDimensions, monitorArea: monitorArea, previewLayout: previewLayout, durationFor: durationFor,
-    workspaceIds: workspaceIds, workspaceLabel: workspaceLabel, appKey: appKey,
+    workspaceIds: workspaceIds, workspaceLabel: workspaceLabel, workspaceIcon: workspaceIcon, appKey: appKey,
+    parseWorkspaceBlocks: parseWorkspaceBlocks, monitorWorkspaceBlock: monitorWorkspaceBlock,
+    workspaceBlockOf: workspaceBlockOf, workspaceSlotOf: workspaceSlotOf,
     sortWindows: sortWindows, iconItems: iconItems, truncate: truncate,
     focusedLabel: focusedLabel, webAppHost: webAppHost, appIdCandidates: appIdCandidates, iconPathScore: iconPathScore,
     iconNameFromPath: iconNameFromPath, stepWorkspace: stepWorkspace, mergedEntry: mergedEntry,
     fallbackLetter: fallbackLetter
   }
 }
+

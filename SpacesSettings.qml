@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import qs.Commons
 import qs.Ui
 
@@ -168,8 +169,59 @@ Item {
             options: [
               { value: "number", label: "Number" },
               { value: "glyph", label: "Glyph" },
+              { value: "custom", label: "Custom" },
               { value: "none", label: "None" }
             ]
+          }
+
+          // ---- Workspace icons (label style "custom")
+          Column {
+            width: parent.width
+            spacing: Style.space(12)
+            visible: root.cfg.labelStyle === "custom"
+
+            Text {
+              width: parent.width
+              wrapMode: Text.WordWrap
+              text: "Emoji or Nerd Font glyphs work. An empty field shows the workspace number."
+              color: root.fg
+              opacity: 0.7
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
+            // Bounded scroll area: ten workspaces must not push the rest of
+            // the form (or the footer) off the panel.
+            Item {
+              width: parent.width
+              height: Math.min(iconFields.implicitHeight, Style.space(300))
+
+              ScrollView {
+                id: iconScroll
+                anchors.fill: parent
+                clip: true
+                contentWidth: availableWidth
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ScrollBar.vertical.policy: iconFields.implicitHeight > height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+
+                Column {
+                  id: iconFields
+                  width: iconScroll.availableWidth
+                  spacing: Style.space(12)
+
+                  TextSetting { title: "ACTIVE WORKSPACE"; key: "activeIcon" }
+
+                  Repeater {
+                    model: Math.max(0, root.cfg.persistentWorkspaces)
+                    delegate: TextSetting {
+                      required property int index
+                      title: "WORKSPACE " + (index + 1)
+                      key: "wsIcon" + (index + 1)
+                    }
+                  }
+                }
+              }
+            }
           }
 
           ChoiceSetting {
@@ -445,4 +497,31 @@ Item {
       root.applySetting(delta)
     }
   }
+
+  component TextSetting: Column {
+    property string title: ""
+    property string key: ""
+
+    width: parent ? parent.width : 0
+    spacing: Style.space(8)
+
+    PanelSectionHeader {
+      text: parent.title
+      foreground: root.fg
+      fontFamily: root.fontFamily
+    }
+
+    TextField {
+      width: parent.width
+      activeFocusOnTab: true
+      foreground: root.fg
+      text: root.cfg[key] || ""
+      onEditingFinished: {
+        var delta = ({})
+        delta[key] = text
+        root.applySetting(delta)
+      }
+    }
+  }
 }
+
