@@ -233,6 +233,22 @@ Item {
             ]
           }
 
+          NumberSetting {
+            title: "PILL HEIGHT"
+            key: "pillHeight"
+            minimum: 0
+            maximum: 64
+            description: "0 keeps the automatic height. Anything else is pixels: 8 or more, never taller than the bar."
+          }
+
+          NumberSetting {
+            title: "PILL PADDING"
+            key: "pillPadding"
+            minimum: 0
+            maximum: 24
+            description: "0 follows the density. Anything else is pixels per side, 1 to 24."
+          }
+
           ChoiceSetting {
             title: "SETTINGS BUTTON"
             key: "settingsButton"
@@ -494,6 +510,50 @@ Item {
       var delta = ({})
       delta[key] = !checked
       root.applySetting(delta)
+    }
+  }
+
+  component NumberSetting: Column {
+    id: numberSetting
+    property string title: ""
+    property string key: ""
+    property int minimum: 0
+    property int maximum: 0
+    property string description: ""
+
+    width: parent ? parent.width : 0
+    spacing: Style.space(8)
+
+    PanelSectionHeader {
+      text: numberSetting.title
+      foreground: root.fg
+      fontFamily: root.fontFamily
+    }
+
+    TextField {
+      objectName: "numberField"
+      width: Style.space(120)
+      activeFocusOnTab: true
+      foreground: root.fg
+      text: String(root.cfg[numberSetting.key])
+      onEditingFinished: {
+        var value = Number(text)
+        if (!isFinite(value)) value = numberSetting.minimum
+        var delta = ({})
+        delta[numberSetting.key] = Math.max(numberSetting.minimum, Math.min(numberSetting.maximum, Math.round(value)))
+        root.applySetting(delta)
+      }
+    }
+
+    Text {
+      visible: numberSetting.description !== ""
+      width: parent.width
+      wrapMode: Text.WordWrap
+      text: numberSetting.description
+      color: root.fg
+      opacity: 0.7
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
     }
   }
 

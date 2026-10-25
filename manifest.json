@@ -200,6 +200,22 @@
         "default": "normal"
       },
       {
+        "key": "pillHeight",
+        "type": "int",
+        "label": "Pill height",
+        "min": 0,
+        "max": 64,
+        "default": 0
+      },
+      {
+        "key": "pillPadding",
+        "type": "int",
+        "label": "Pill padding",
+        "min": 0,
+        "max": 24,
+        "default": 0
+      },
+      {
         "key": "settingsButton",
         "type": "enum",
         "label": "Settings button",
