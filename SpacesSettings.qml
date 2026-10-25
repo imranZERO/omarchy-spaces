@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import qs.Commons
 import qs.Ui
+import "Model.js" as Model
 
 // Kept separate from the workspace widget so the form can be previewed in isolation.
 Item {
@@ -15,6 +16,14 @@ Item {
   signal settingChanged(var delta)
   signal resetRequested()
   signal closeRequested()
+
+  // Same geometry the widget renders, so the pill-size preview and the "Auto"
+  // labels show the real numbers instead of a second opinion.
+  readonly property int barHeight: bar ? bar.barSize : Style.bar.sizeHorizontal
+  readonly property int autoPillHeight: Model.pillThickness(barHeight, 0, Style.space(6))
+  readonly property int autoPillPad: Style.space(Model.densityMetrics(cfg ? cfg.density : "normal").pad)
+  readonly property int pillHeight: Model.pillThickness(barHeight, cfg ? cfg.pillHeight : 0, Style.space(6))
+  readonly property real pillPad: Model.pillPad(cfg ? cfg.pillPadding : 0, autoPillPad)
 
   function applySetting(delta) { settingChanged(delta) }
   implicitHeight: header.implicitHeight + Math.max(navigation.implicitHeight, form.implicitHeight)
@@ -233,20 +242,34 @@ Item {
             ]
           }
 
-          NumberSetting {
-            title: "PILL HEIGHT"
-            key: "pillHeight"
-            minimum: 0
-            maximum: 64
-            description: "0 keeps the automatic height. Anything else is pixels: 8 or more, never taller than the bar."
+          // ---- Pill size (height and padding only mean something together)
+          PanelSeparator { foreground: root.fg }
+
+          Text {
+            text: "Pill size"
+            color: root.fg
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            font.bold: true
           }
 
-          NumberSetting {
+          PillPreview { }
+
+          PillSizeSetting {
+            title: "PILL HEIGHT"
+            key: "pillHeight"
+            maximum: Math.max(8, root.barHeight)
+            floor: 8
+            autoValue: root.autoPillHeight
+            hint: "0 = automatic. Never taller than the bar."
+          }
+
+          PillSizeSetting {
             title: "PILL PADDING"
             key: "pillPadding"
-            minimum: 0
             maximum: 24
-            description: "0 follows the density. Anything else is pixels per side, 1 to 24."
+            autoValue: root.autoPillPad
+            hint: "Each side: left and right stay equal. 0 = from density."
           }
 
           ChoiceSetting {
@@ -513,43 +536,171 @@ Item {
     }
   }
 
-  component NumberSetting: Column {
-    id: numberSetting
+  // Live preview of the active pill: the bar strip, the pill at the chosen
+  // height, and the chosen padding on both sides of the label.
+  component PillPreview: Item {
+    width: parent ? parent.width : 0
+    implicitHeight: Math.max(root.barHeight, Style.space(20))
+
+    // A neutral strip rather than the bar's own colour: on most themes the
+    // panel and the bar share it, and the pill would float on nothing.
+    Rectangle {
+      anchors.fill: parent
+      color: Util.alpha(root.fg, 0.07)
+    }
+    Rectangle {
+      anchors.fill: parent
+      color: "transparent"
+      border.color: Util.alpha(root.fg, 0.25)
+      border.width: Math.max(1, Style.space(1))
+    }
+    Rectangle {
+      anchors.centerIn: parent
+      height: root.pillHeight
+      width: previewLabel.implicitWidth + root.pillPad * 2
+      radius: Style.cornerRadius > 0 ? Math.round(height * 0.32) : 0
+      color: Util.alpha(root.fg, 0.18)
+      Behavior on height { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+      Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+
+      Text {
+        id: previewLabel
+        anchors.centerIn: parent
+        text: "3"
+        color: root.fg
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+        font.bold: true
+      }
+    }
+  }
+
+  // One pixel size: a value with its unit, a slider, and -/+ buttons so a
+  // single pixel is easy to hit. 0 shows as "Auto" with the value the widget
+  // is already using.
+  component PillSizeSetting: Column {
+    id: pillSetting
     property string title: ""
     property string key: ""
-    property int minimum: 0
-    property int maximum: 0
-    property string description: ""
+    property string hint: ""
+    property int autoValue: 0
+    property int maximum: 24
+    // Smallest usable explicit value; 0 always means automatic.
+    property int floor: 1
+
+    readonly property int current: Number(root.cfg[pillSetting.key]) || 0
+    readonly property string valueLabel:
+      pillSetting.current > 0 ? pillSetting.current + " px"
+                              : "Auto (" + pillSetting.autoValue + " px)"
 
     width: parent ? parent.width : 0
-    spacing: Style.space(8)
+    spacing: Style.space(6)
 
-    PanelSectionHeader {
-      text: numberSetting.title
-      foreground: root.fg
-      fontFamily: root.fontFamily
+    function commit(value) {
+      var next = Math.round(value)
+      if (next > 0 && next < pillSetting.floor) next = pillSetting.floor
+      var delta = ({})
+      delta[pillSetting.key] = Math.max(0, Math.min(pillSetting.maximum, next))
+      root.applySetting(delta)
+    }
+    // Stepping away from Auto starts at the value the bar already shows, and
+    // stepping below the floor goes back to Auto.
+    function step(delta) {
+      var base = pillSetting.current > 0 ? pillSetting.current : pillSetting.autoValue
+      var next = base + delta
+      if (next < pillSetting.floor) next = 0
+      pillSetting.commit(next)
+    }
+    // Writing shell.json on every drag pixel would be wasteful, so only real
+    // integer changes are applied; the bar and the preview follow the drag.
+    function follow(value) {
+      if (Math.round(value) !== pillSetting.current) pillSetting.commit(value)
     }
 
-    TextField {
-      objectName: "numberField"
-      width: Style.space(120)
-      activeFocusOnTab: true
-      foreground: root.fg
-      text: String(root.cfg[numberSetting.key])
-      onEditingFinished: {
-        var value = Number(text)
-        if (!isFinite(value)) value = numberSetting.minimum
-        var delta = ({})
-        delta[numberSetting.key] = Math.max(numberSetting.minimum, Math.min(numberSetting.maximum, Math.round(value)))
-        root.applySetting(delta)
+    Item {
+      width: parent.width
+      implicitHeight: pillHeader.implicitHeight
+      PanelSectionHeader {
+        id: pillHeader
+        text: pillSetting.title
+        foreground: root.fg
+        fontFamily: root.fontFamily
+      }
+      Text {
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        text: pillSetting.valueLabel
+        color: root.fg
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        font.bold: true
+      }
+    }
+
+    Item {
+      width: parent.width
+      implicitHeight: pillSlider.implicitHeight
+      height: implicitHeight
+
+      Button {
+        id: pillMinus
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        width: Style.space(26)
+        text: "\u2212"
+        foreground: root.fg
+        fontFamily: root.fontFamily
+        fontSize: Style.font.body
+        bordered: true
+        focusable: true
+        enabled: pillSetting.current > 0
+        opacity: enabled ? 1 : 0.35
+        onClicked: pillSetting.step(-1)
+      }
+      Button {
+        id: pillPlus
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        width: Style.space(26)
+        text: "+"
+        foreground: root.fg
+        fontFamily: root.fontFamily
+        fontSize: Style.font.body
+        bordered: true
+        focusable: true
+        enabled: pillSetting.current < pillSetting.maximum
+        opacity: enabled ? 1 : 0.35
+        onClicked: pillSetting.step(1)
+      }
+      PanelSlider {
+        id: pillSlider
+        activeFocusOnTab: true
+        Keys.onLeftPressed: released(Math.max(minimum, value - 1))
+        Keys.onRightPressed: released(Math.min(maximum, value + 1))
+        Keys.onPressed: function(event) {
+          if (event.key === Qt.Key_Home) { released(minimum); event.accepted = true }
+          else if (event.key === Qt.Key_End) { released(maximum); event.accepted = true }
+        }
+        anchors.left: pillMinus.right
+        anchors.right: pillPlus.left
+        anchors.leftMargin: Style.space(8)
+        anchors.rightMargin: Style.space(8)
+        anchors.verticalCenter: parent.verticalCenter
+        bar: root.bar
+        minimum: 0
+        maximum: pillSetting.maximum
+        step: 1
+        integer: true
+        value: pillSetting.current
+        onMoved: function(value) { pillSetting.follow(value) }
+        onReleased: function(value) { pillSetting.commit(value) }
       }
     }
 
     Text {
-      visible: numberSetting.description !== ""
       width: parent.width
       wrapMode: Text.WordWrap
-      text: numberSetting.description
+      text: pillSetting.hint
       color: root.fg
       opacity: 0.7
       font.family: root.fontFamily

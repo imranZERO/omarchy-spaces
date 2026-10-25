@@ -4,8 +4,9 @@
 
 - Appearance → Pill height and Pill padding: set the pill height in pixels for
   a thinner pill with bar background above and below it, and the horizontal
-  padding inside each pill. Both are 0 by default, which keeps the automatic
-  height and the density padding, so nothing changes until you choose them.
+  padding inside each pill, with a live preview of the result. Both are 0 by
+  default, which keeps the automatic height and the density padding, so nothing
+  changes until you choose them.
 
 ## 1.5.0
 
