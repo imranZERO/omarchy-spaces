@@ -84,6 +84,10 @@ Window {
       equal(form.cfg.pillPadding, 24)
       keyClick(Qt.Key_Home)
       equal(form.cfg.pillPadding, 0)
+      // Group headings are all the same small-caps label; a title-case heading
+      // of its own would stand out from every other group.
+      equal(find(form, "text", "Pill size"), null)
+      equal(find(form, "text", "PILL SIZE") !== null, true)
       form.cfg = Model.resolveSettings({})
       mouseClick(find(form, "text", "App icons"))
       mouseClick(find(form, "text", "Monochrome"))

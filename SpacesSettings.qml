@@ -20,9 +20,9 @@ Item {
   // Same geometry the widget renders, so the pill-size preview and the "Auto"
   // labels show the real numbers instead of a second opinion.
   readonly property int barHeight: bar ? bar.barSize : Style.bar.sizeHorizontal
-  readonly property int autoPillHeight: Model.pillThickness(barHeight, 0, Style.space(6))
+  readonly property int autoPillHeight: Model.pillThickness(barHeight, 0, Style.space(Model.PILL_LIMITS.autoInset))
   readonly property int autoPillPad: Style.space(Model.densityMetrics(cfg ? cfg.density : "normal").pad)
-  readonly property int pillHeight: Model.pillThickness(barHeight, cfg ? cfg.pillHeight : 0, Style.space(6))
+  readonly property int pillHeight: Model.pillThickness(barHeight, cfg ? cfg.pillHeight : 0, Style.space(Model.PILL_LIMITS.autoInset))
   readonly property real pillPad: Model.pillPad(cfg ? cfg.pillPadding : 0, autoPillPad)
 
   function applySetting(delta) { settingChanged(delta) }
@@ -165,12 +165,6 @@ Item {
             ]
           }
 
-          ToggleSetting {
-            label: "Pill background"
-            description: "Fill behind occupied and hovered workspaces"
-            key: "pillBackground"
-          }
-
           ChoiceSetting {
             title: "WORKSPACE LABEL"
             key: "labelStyle"
@@ -232,6 +226,47 @@ Item {
             }
           }
 
+          // ---- Pill size: the two pixel settings plus the pill fill. The heading
+          // is the same small-caps label as every other group, and the group keeps
+          // the 8 px heading-to-content gap the other settings use.
+          Column {
+            width: parent.width
+            spacing: Style.space(8)
+
+            PanelSectionHeader {
+              text: "PILL SIZE"
+              foreground: root.fg
+              fontFamily: root.fontFamily
+            }
+
+            PillPreview { }
+
+            PillSizeSetting {
+              title: "PILL HEIGHT"
+              key: "pillHeight"
+              maximum: Math.min(Model.PILL_LIMITS.heightMax, Math.max(Model.PILL_LIMITS.heightMin, root.barHeight))
+              floor: Model.PILL_LIMITS.heightMin
+              shownValue: root.pillHeight
+              autoValue: root.autoPillHeight
+              hint: Model.PILL_LIMITS.heightMin + " px min, bar height max."
+            }
+
+            PillSizeSetting {
+              title: "PILL PADDING"
+              key: "pillPadding"
+              maximum: Model.PILL_LIMITS.paddingMax
+              shownValue: Math.round(root.pillPad)
+              autoValue: root.autoPillPad
+              hint: "Same on both sides."
+            }
+
+            ToggleSetting {
+              label: "Pill background"
+              description: "Fill behind occupied and hovered workspaces"
+              key: "pillBackground"
+            }
+          }
+
           ChoiceSetting {
             title: "DENSITY"
             key: "density"
@@ -240,36 +275,6 @@ Item {
               { value: "normal", label: "Normal" },
               { value: "roomy", label: "Roomy" }
             ]
-          }
-
-          // ---- Pill size (height and padding only mean something together)
-          PanelSeparator { foreground: root.fg }
-
-          Text {
-            text: "Pill size"
-            color: root.fg
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
-            font.bold: true
-          }
-
-          PillPreview { }
-
-          PillSizeSetting {
-            title: "PILL HEIGHT"
-            key: "pillHeight"
-            maximum: Math.max(8, root.barHeight)
-            floor: 8
-            autoValue: root.autoPillHeight
-            hint: "0 = automatic. Never taller than the bar."
-          }
-
-          PillSizeSetting {
-            title: "PILL PADDING"
-            key: "pillPadding"
-            maximum: 24
-            autoValue: root.autoPillPad
-            hint: "Each side: left and right stay equal. 0 = from density."
           }
 
           ChoiceSetting {
@@ -536,62 +541,80 @@ Item {
     }
   }
 
-  // Live preview of the active pill: the bar strip, the pill at the chosen
-  // height, and the chosen padding on both sides of the label.
+  // A slice of the real bar: a few pills with the real labels, the active one
+  // filled and every pill at the chosen height and padding.
   component PillPreview: Item {
+    id: preview
+
+    function label(id, active) {
+      var custom = Model.workspaceIcon(root.cfg, id, active)
+      if (custom !== "") return custom
+      return Model.workspaceLabel(id, active, root.cfg.labelStyle, -1)
+    }
+
     width: parent ? parent.width : 0
     implicitHeight: Math.max(root.barHeight, Style.space(20))
 
-    // A neutral strip rather than the bar's own colour: on most themes the
-    // panel and the bar share it, and the pill would float on nothing.
     Rectangle {
       anchors.fill: parent
-      color: Util.alpha(root.fg, 0.07)
-    }
-    Rectangle {
-      anchors.fill: parent
-      color: "transparent"
-      border.color: Util.alpha(root.fg, 0.25)
+      radius: Style.cornerRadius
+      color: root.bar ? root.bar.background : Util.alpha(root.fg, 0.07)
+      border.color: Util.alpha(root.fg, 0.22)
       border.width: Math.max(1, Style.space(1))
     }
-    Rectangle {
-      anchors.centerIn: parent
-      height: root.pillHeight
-      width: previewLabel.implicitWidth + root.pillPad * 2
-      radius: Style.cornerRadius > 0 ? Math.round(height * 0.32) : 0
-      color: Util.alpha(root.fg, 0.18)
-      Behavior on height { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-      Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
-      Text {
-        id: previewLabel
-        anchors.centerIn: parent
-        text: "3"
-        color: root.fg
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.body
-        font.bold: true
+    Row {
+      anchors.left: parent.left
+      anchors.leftMargin: Style.space(8)
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: Style.space(Model.pillGap(root.cfg.density))
+
+      Repeater {
+        model: 5
+        delegate: Rectangle {
+          required property int index
+          readonly property int workspaceId: index + 1
+          readonly property bool active: workspaceId === 3
+          readonly property string pillLabel: preview.label(workspaceId, active)
+
+          height: root.pillHeight
+          width: labelText.implicitWidth + root.pillPad * 2
+          radius: Model.pillRadius(height, Style.cornerRadius > 0)
+          color: active ? Util.alpha(root.fg, 0.18) : "transparent"
+
+          Behavior on height { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+          Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+
+          Text {
+            id: labelText
+            anchors.centerIn: parent
+            text: parent.pillLabel
+            color: root.fg
+            opacity: parent.active ? 1 : 0.5
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            font.bold: parent.active
+          }
+        }
       }
     }
   }
 
-  // One pixel size: a value with its unit, a slider, and -/+ buttons so a
-  // single pixel is easy to hit. 0 shows as "Auto" with the value the widget
-  // is already using.
+  // One pixel size: value with unit, slider, -/+ buttons, and "Auto" under the
+  // slider start. 0 means automatic and the header shows the resulting pixels.
   component PillSizeSetting: Column {
     id: pillSetting
     property string title: ""
     property string key: ""
     property string hint: ""
     property int autoValue: 0
+    // Pixels the widget actually renders, so the header never lies.
+    property int shownValue: 0
     property int maximum: 24
     // Smallest usable explicit value; 0 always means automatic.
     property int floor: 1
 
     readonly property int current: Number(root.cfg[pillSetting.key]) || 0
-    readonly property string valueLabel:
-      pillSetting.current > 0 ? pillSetting.current + " px"
-                              : "Auto (" + pillSetting.autoValue + " px)"
 
     width: parent ? parent.width : 0
     spacing: Style.space(6)
@@ -611,8 +634,8 @@ Item {
       if (next < pillSetting.floor) next = 0
       pillSetting.commit(next)
     }
-    // Writing shell.json on every drag pixel would be wasteful, so only real
-    // integer changes are applied; the bar and the preview follow the drag.
+    // A drag reports the same integer while the pointer stays inside one step,
+    // so only a changed value is written; the bar and the preview follow it.
     function follow(value) {
       if (Math.round(value) !== pillSetting.current) pillSetting.commit(value)
     }
@@ -629,7 +652,7 @@ Item {
       Text {
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        text: pillSetting.valueLabel
+        text: pillSetting.shownValue + " px"
         color: root.fg
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
@@ -640,7 +663,6 @@ Item {
     Item {
       width: parent.width
       implicitHeight: pillSlider.implicitHeight
-      height: implicitHeight
 
       Button {
         id: pillMinus
@@ -697,16 +719,35 @@ Item {
       }
     }
 
-    Text {
+    // "Auto" marks the left end of the track; the hint sits beside it so the
+    // control stays three rows tall.
+    Item {
       width: parent.width
-      wrapMode: Text.WordWrap
-      text: pillSetting.hint
-      color: root.fg
-      opacity: 0.7
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
+      implicitHeight: autoLabel.implicitHeight
+
+      Text {
+        id: autoLabel
+        x: Style.space(26) + Style.space(8)
+        text: "Auto"
+        color: root.fg
+        opacity: 0.6
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+      Text {
+        anchors.right: parent.right
+        anchors.verticalCenter: autoLabel.verticalCenter
+        text: pillSetting.hint
+        color: root.fg
+        opacity: 0.7
+        elide: Text.ElideRight
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+      }
     }
   }
+
+
 
   component TextSetting: Column {
     property string title: ""
