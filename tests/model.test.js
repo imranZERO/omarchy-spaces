@@ -243,6 +243,69 @@ test("new settings validate", () => {
   assert.strictEqual(M.resolveSettings({ pillBackground: false }).pillBackground, false)
 })
 
+test("pillHeight and pillPadding default to automatic", () => {
+  const s = M.resolveSettings({})
+  assert.strictEqual(s.pillHeight, 0)
+  assert.strictEqual(s.pillPadding, 0)
+  assert.strictEqual(M.resolveSettings({ pillHeight: "13" }).pillHeight, 13)
+  assert.strictEqual(M.resolveSettings({ pillHeight: -5 }).pillHeight, 0)
+  assert.strictEqual(M.resolveSettings({ pillHeight: 500 }).pillHeight, 64)
+  assert.strictEqual(M.resolveSettings({ pillPadding: 6 }).pillPadding, 6)
+  assert.strictEqual(M.resolveSettings({ pillPadding: 99 }).pillPadding, 24)
+  assert.strictEqual(M.resolveSettings({ pillPadding: -1 }).pillPadding, 0)
+})
+
+test("automatic pill height is exactly the old expression", () => {
+  // No rounding of barSize and no change to the floor: 0 means today's pill.
+  for (const bar of [18, 20, 26, 28, 30]) {
+    assert.strictEqual(M.pillThickness(bar, 0, 6), Math.max(16, bar - 6))
+  }
+  assert.strictEqual(M.pillThickness(27.5, 0, 6), 21.5)
+  // The spacing scale still reaches the inset, as it always did.
+  assert.strictEqual(M.pillThickness(30, 0, 11), 19)
+})
+
+test("an explicit pillHeight wins, capped to the bar, 8 px floor", () => {
+  assert.strictEqual(M.pillThickness(28, 13, 6), 13)
+  assert.strictEqual(M.pillThickness(28, 40, 6), 28)
+  assert.strictEqual(M.pillThickness(28, 5, 6), 8)
+})
+
+test("pillPadding replaces the density padding only when set", () => {
+  assert.strictEqual(M.pillPad(0, 7), 7)
+  assert.strictEqual(M.pillPad(6, 7), 6)
+  assert.strictEqual(M.pillPad(0, 3), 3)
+})
+
+test("the pill limits are stated once", () => {
+  assert.strictEqual(M.PILL_LIMITS.heightMin, 8)
+  assert.strictEqual(M.PILL_LIMITS.heightMax, 64)
+  assert.strictEqual(M.PILL_LIMITS.paddingMax, 24)
+  assert.strictEqual(M.PILL_LIMITS.autoFloor, 16)
+  assert.strictEqual(M.PILL_LIMITS.autoInset, 6)
+  assert.strictEqual(M.PILL_LIMITS.radiusRatio, 0.32)
+  // resolveSettings clamps to the same numbers the settings panel shows.
+  assert.strictEqual(M.resolveSettings({ pillHeight: 999 }).pillHeight, M.PILL_LIMITS.heightMax)
+  assert.strictEqual(M.resolveSettings({ pillPadding: 999 }).pillPadding, M.PILL_LIMITS.paddingMax)
+})
+
+test("the bar caps the pill before the floor applies", () => {
+  // A bar shorter than the 8 px floor wins: the pill never leaves the bar.
+  assert.strictEqual(M.pillThickness(6, 18, 6), 6)
+  assert.strictEqual(M.pillThickness(6, 5, 6), 6)
+  assert.strictEqual(M.pillThickness(0, 18, 6), 0)
+})
+
+test("pillRadius and pillGap carry the widget rules", () => {
+  assert.strictEqual(M.pillRadius(20, true), 6)
+  assert.strictEqual(M.pillRadius(17, true), 5)
+  assert.strictEqual(M.pillRadius(20, false), 0)
+  assert.strictEqual(M.pillGap("compact"), 2)
+  assert.strictEqual(M.pillGap("roomy"), 7)
+  assert.strictEqual(M.pillGap("normal"), 4)
+  assert.strictEqual(M.pillGap("junk"), 4)
+})
+
 test("normalizeAddress strips 0x and lowercases", () => {
   assert.strictEqual(M.normalizeAddress("0x624FAC"), "624fac")
   assert.strictEqual(M.normalizeAddress("624fac"), "624fac")

@@ -28,6 +28,8 @@ var DEFAULTS = {
   middleClickClose: false,    // middle-click an icon closes that window
   tooltips: true,
   density: "normal",          // "compact" | "normal" | "roomy"
+  pillHeight: 0,              // px; 0 = automatic (bar height minus the usual inset)
+  pillPadding: 0,             // px per side inside a pill; 0 = from density
   activeClick: "none",        // clicking the active pill: "none" | "previous"
   activeIconClick: "cycle",   // clicking a focused app: "cycle" | "previous"
   settingsButton: "never",    // gear button: "hover" | "always" | "never"
@@ -93,6 +95,8 @@ function resolveSettings(raw) {
     middleClickClose: bool(s.middleClickClose, d.middleClickClose),
     tooltips: bool(s.tooltips, d.tooltips),
     density: oneOf(s.density, DENSITIES, d.density),
+    pillHeight: clampInt(s.pillHeight, 0, PILL_LIMITS.heightMax, d.pillHeight),
+    pillPadding: clampInt(s.pillPadding, 0, PILL_LIMITS.paddingMax, d.pillPadding),
     activeClick: oneOf(s.activeClick, ACTIVE_CLICKS, d.activeClick),
     activeIconClick: oneOf(s.activeIconClick, ACTIVE_ICON_CLICKS, d.activeIconClick),
     settingsButton: oneOf(s.settingsButton, SETTINGS_BUTTONS, d.settingsButton),
@@ -136,6 +140,41 @@ function densityMetrics(density) {
   if (density === "compact") return { gap: 2, pad: 5, iconGap: 1 }
   if (density === "roomy") return { gap: 7, pad: 10, iconGap: 5 }
   return { gap: 4, pad: 7, iconGap: 3 }
+}
+
+// Pill limits, in unscaled px, stated once: the widget, the settings panel and
+// the clamps below all read them from here. manifest.json has to repeat the
+// numbers because its schema takes literals, not references.
+var PILL_LIMITS = {
+  heightMin: 8,       // smallest explicit pill; the bar still wins on a shorter bar
+  heightMax: 64,      // tallest pill the setting stores
+  paddingMax: 24,
+  autoFloor: 16,      // floor for the automatic height
+  autoInset: 6,       // bar edge to an automatic pill, before the spacing scale
+  radiusRatio: 0.32   // corner radius as a fraction of the height
+}
+
+// Pill height. 0 keeps the automatic size (bar height minus the spacing inset);
+// a positive pillHeight is used as is, floored at the minimum and never taller
+// than the bar, so a bar shorter than the floor still caps the pill.
+function pillThickness(barSize, pillHeight, inset) {
+  if (pillHeight > 0) return Math.min(Math.max(pillHeight, PILL_LIMITS.heightMin), barSize)
+  return Math.max(PILL_LIMITS.autoFloor, barSize - inset)
+}
+
+// Corner radius for a pill of `thickness`, or 0 when the theme is square.
+function pillRadius(thickness, rounded) {
+  return rounded ? Math.round(thickness * PILL_LIMITS.radiusRatio) : 0
+}
+
+// Gap between pills, so the settings preview uses the widget's spacing.
+function pillGap(density) {
+  return densityMetrics(density).gap
+}
+
+// Horizontal padding inside a pill: an explicit pillPadding wins over density.
+function pillPad(pillPadding, autoPad) {
+  return pillPadding > 0 ? pillPadding : autoPad
 }
 
 // Hyprland reports addresses with or without the 0x prefix depending on source.
@@ -752,7 +791,9 @@ function mergedEntry(moduleName, current, delta) {
 if (typeof module !== "undefined") {
   module.exports = {
     DEFAULTS: DEFAULTS, resolveSettings: resolveSettings, showsApps: showsApps,
-    densityMetrics: densityMetrics, normalizeAddress: normalizeAddress,
+    densityMetrics: densityMetrics, pillThickness: pillThickness, pillPad: pillPad,
+    pillRadius: pillRadius, pillGap: pillGap, PILL_LIMITS: PILL_LIMITS,
+    normalizeAddress: normalizeAddress,
     agentWindowStates: agentWindowStates, agentPinAddress: agentPinAddress,
     parsePids: parsePids, normalizeAgentState: normalizeAgentState,
     agentProcessIds: agentProcessIds, pruneDeadAgents: pruneDeadAgents,
