@@ -108,6 +108,19 @@ Panel {
   property int previousWorkspaceId: -1
   property int lastWorkspaceId: -1
 
+  property var windowFocusHistory: []
+
+  function liveWindowAddresses() {
+    return Hyprland.toplevels.values.map(function(toplevel) {
+      return Model.normalizeAddress(toplevel.address)
+    })
+  }
+
+  function rememberFocusedWindow() {
+    root.windowFocusHistory = Model.rememberWindowFocus(
+      root.windowFocusHistory, root.activeWindowAddress(), root.liveWindowAddresses())
+  }
+
   onCurrentWorkspaceIdChanged: {
     if (root.lastWorkspaceId > 0 && root.lastWorkspaceId !== root.currentWorkspaceId)
       root.previousWorkspaceId = root.lastWorkspaceId
@@ -294,7 +307,10 @@ Panel {
 
   Connections {
     target: Hyprland
-    function onActiveToplevelChanged() { Qt.callLater(root.acknowledgeAgents) }
+    function onActiveToplevelChanged() {
+      root.rememberFocusedWindow()
+      Qt.callLater(root.acknowledgeAgents)
+    }
   }
 
   Process {
@@ -395,13 +411,10 @@ Panel {
   }
 
   function activateItem(item) {
-    // A grouped icon that is already focused cycles through its windows.
-    if (item.focused && item.addresses.length > 1) {
-      var idx = item.addresses.indexOf(item.address)
-      focusWindow(item.addresses[(idx + 1) % item.addresses.length])
-    } else {
-      focusWindow(item.address)
-    }
+    root.rememberFocusedWindow()
+    var target = Model.iconClickTarget(item, root.cfg.activeIconClick,
+      root.windowFocusHistory, root.liveWindowAddresses())
+    if (target) focusWindow(target)
   }
 
   function scrollBy(delta) {
@@ -600,6 +613,7 @@ Panel {
   }
 
   Component.onCompleted: {
+    root.rememberFocusedWindow()
     // Touching the list starts Quickshell's desktop-entry scan.
     DesktopEntries.applications.values
     iconScan.running = true

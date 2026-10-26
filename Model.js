@@ -29,6 +29,7 @@ var DEFAULTS = {
   tooltips: true,
   density: "normal",          // "compact" | "normal" | "roomy"
   activeClick: "none",        // clicking the active pill: "none" | "previous"
+  activeIconClick: "cycle",   // clicking a focused app: "cycle" | "previous"
   settingsButton: "never",    // gear button: "hover" | "always" | "never"
   previews: true,             // live preview of a workspace on hover
   previewSize: "medium",      // "small" | "medium" | "large"
@@ -43,6 +44,7 @@ var SHOW_APPS = ["all", "active", "hover", "hoverOnly"]
 var ICON_STYLES = ["color", "mono"]
 var DENSITIES = ["compact", "normal", "roomy"]
 var ACTIVE_CLICKS = ["none", "previous"]
+var ACTIVE_ICON_CLICKS = ["cycle", "previous"]
 var SETTINGS_BUTTONS = ["hover", "always", "never"]
 var PREVIEW_SIZES = ["small", "medium", "large"]
 var ACTIVE_STYLES = ["subtle", "solid", "accent"]
@@ -92,6 +94,7 @@ function resolveSettings(raw) {
     tooltips: bool(s.tooltips, d.tooltips),
     density: oneOf(s.density, DENSITIES, d.density),
     activeClick: oneOf(s.activeClick, ACTIVE_CLICKS, d.activeClick),
+    activeIconClick: oneOf(s.activeIconClick, ACTIVE_ICON_CLICKS, d.activeIconClick),
     settingsButton: oneOf(s.settingsButton, SETTINGS_BUTTONS, d.settingsButton),
     previews: bool(s.previews, d.previews),
     previewSize: oneOf(s.previewSize, PREVIEW_SIZES, d.previewSize),
@@ -402,6 +405,35 @@ function truncate(text, max) {
   return out + "…"
 }
 
+// Keep recent focus order, ignoring temporary loss of focus to a shell layer.
+function rememberWindowFocus(history, address, openAddresses) {
+  var current = normalizeAddress(address)
+  if (!current) return history
+  var next = [current]
+  for (var i = 0; i < history.length; i++) {
+    var key = normalizeAddress(history[i])
+    if (key !== current && openAddresses.indexOf(key) !== -1 && next.indexOf(key) === -1)
+      next.push(key)
+  }
+  return next
+}
+
+function iconClickTarget(item, mode, history, openAddresses) {
+  if (!item) return ""
+  var current = normalizeAddress(item.address)
+  if (!item.focused) return current
+  if (mode === "previous") {
+    for (var i = 0; i < history.length; i++) {
+      var key = normalizeAddress(history[i])
+      if (key !== current && openAddresses.indexOf(key) !== -1) return key
+    }
+    return current
+  }
+  var addresses = item.addresses || [item.address]
+  var index = addresses.indexOf(item.address)
+  return normalizeAddress(addresses[(index + 1) % addresses.length])
+}
+
 // Title shown next to the focused icon. The app name when
 // the app has a single window in the workspace, else the window title.
 function focusedLabel(item, appName, maxLength) {
@@ -686,6 +718,7 @@ if (typeof module !== "undefined") {
     parseWorkspaceBlocks: parseWorkspaceBlocks, monitorWorkspaceBlock: monitorWorkspaceBlock,
     workspaceBlockOf: workspaceBlockOf, workspaceSlotOf: workspaceSlotOf,
     sortWindows: sortWindows, iconItems: iconItems, truncate: truncate,
+    rememberWindowFocus: rememberWindowFocus, iconClickTarget: iconClickTarget,
     focusedLabel: focusedLabel, webAppHost: webAppHost, appIdCandidates: appIdCandidates, iconPathScore: iconPathScore,
     iconNameFromPath: iconNameFromPath, stepWorkspace: stepWorkspace, mergedEntry: mergedEntry,
     fallbackLetter: fallbackLetter

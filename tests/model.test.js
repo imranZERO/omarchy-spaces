@@ -21,6 +21,49 @@ test("resolveSettings fills defaults and clamps", () => {
   assert.strictEqual(s.groupApps, false)
 })
 
+test("focused icon click settings preserve cycling unless previous is selected", () => {
+  assert.strictEqual(M.resolveSettings({}).activeIconClick, "cycle")
+  assert.strictEqual(M.resolveSettings({activeIconClick: "previous"}).activeIconClick, "previous")
+  assert.strictEqual(M.resolveSettings({activeIconClick: "invalid"}).activeIconClick, "cycle")
+})
+
+test("focus history ignores shell layers, removes closed windows and normalizes addresses", () => {
+  let history = M.rememberWindowFocus([], "0xA", ["a", "b"])
+  history = M.rememberWindowFocus(history, "0xB", ["a", "b"])
+  assert.deepStrictEqual(history, ["b", "a"])
+  assert.deepStrictEqual(M.rememberWindowFocus(history, "", []), history)
+  assert.deepStrictEqual(M.rememberWindowFocus(history, "0xb", ["a", "b"]), history)
+  assert.deepStrictEqual(M.rememberWindowFocus(history, "c", ["b", "c"]), ["c", "b"])
+})
+
+test("repeated icon clicks toggle back to the previous window", () => {
+  const open = ["a", "b", "c"]
+  const icon = {address: "b", addresses: ["b"], focused: false}
+  let history = M.rememberWindowFocus([], "a", open)
+  assert.strictEqual(M.iconClickTarget(icon, "previous", history, open), "b")
+  history = M.rememberWindowFocus(history, "b", open)
+  icon.focused = true
+  assert.strictEqual(M.iconClickTarget(icon, "previous", history, open), "a")
+  history = M.rememberWindowFocus(history, "a", open)
+  icon.focused = false
+  assert.strictEqual(M.iconClickTarget(icon, "previous", history, open), "b")
+})
+
+test("focused icon skips closed history and stays put without another window", () => {
+  const icon = {address: "b", addresses: ["b"], focused: true}
+  assert.strictEqual(M.iconClickTarget(icon, "previous", ["b", "a", "c"], ["b", "c"]), "c")
+  assert.strictEqual(M.iconClickTarget(icon, "previous", ["b", "a"], ["b"]), "b")
+  assert.strictEqual(M.iconClickTarget(icon, "previous", [], ["b"]), "b")
+})
+
+test("previous window mode takes precedence over grouped cycling", () => {
+  const icon = {address: "b", addresses: ["b", "c"], focused: true}
+  assert.strictEqual(M.iconClickTarget(icon, "previous", ["b", "a"], ["a", "b", "c"]), "a")
+  assert.strictEqual(M.iconClickTarget(icon, "cycle", ["b", "a"], ["a", "b", "c"]), "c")
+  icon.address = "c"
+  assert.strictEqual(M.iconClickTarget(icon, "cycle", [], ["b", "c"]), "b")
+})
+
 test("workspaceIds keeps persistent, adds occupied and active, sorted", () => {
   assert.deepStrictEqual(M.workspaceIds({ 7: 2, 2: 0 }, [9], 3, false), [1, 2, 3, 7, 9])
 })
