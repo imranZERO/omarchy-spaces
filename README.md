@@ -184,6 +184,22 @@ Settings can also be set from a script:
 omarchy bar set tornikegomareli.spaces showApps all
 ```
 
+### Return to the previous window
+
+Under **Behaviour → Clicking the focused app icon**, choose **Previous window**
+to switch back when clicking the icon of the window you are already using.
+For example, focus a browser from your terminal, then click the browser icon
+again to return to that terminal. This works across workspaces too.
+
+```sh
+omarchy bar set tornikegomareli.spaces activeIconClick previous
+```
+
+The default, **Cycles windows** (`activeIconClick cycle`), keeps the existing
+behavior for grouped apps. **Previous window** takes precedence over cycling.
+Closed windows are skipped; if there is no previous window, focus stays put.
+Focus history starts when Spaces loads.
+
 ### Show numbers while holding Super
 
 Off by default. When on, the workspace numbers appear while you hold Super, so you can see which workspace an app is on even if labels are set to None or Glyph. They hide again when you release Super or switch workspace.

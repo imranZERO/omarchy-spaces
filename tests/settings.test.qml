@@ -69,11 +69,18 @@ Window {
       equal(form.cfg.hideEmpty, false)
       equal(form.cfg.persistentWorkspaces, 5)
       mouseClick(find(form, "text", "App icons"))
+      wait(50)
       mouseClick(find(form, "text", "Monochrome"))
       equal(form.cfg.iconStyle, "mono")
       mouseClick(find(form, "key", "showIcons"))
       equal(form.cfg.showIcons, false)
       equal(find(form, "key", "iconSize").visible, false)
+      mouseClick(find(form, "text", "Behaviour"))
+      wait(50)
+      mouseClick(find(form, "text", "Previous window"))
+      equal(form.cfg.activeIconClick, "previous")
+      mouseClick(find(form, "text", "Cycles windows"))
+      equal(form.cfg.activeIconClick, "cycle")
       form.cfg = Model.resolveSettings({focusedTitle: true})
       for (var section of ["icons", "windows", "appearance", "workspaces", "previews", "behavior"]) {
         form.section = section

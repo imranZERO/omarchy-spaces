@@ -177,6 +177,13 @@
         "default": "none"
       },
       {
+        "key": "activeIconClick",
+        "type": "enum",
+        "label": "Clicking the focused app icon",
+        "options": ["cycle", "previous"],
+        "default": "cycle"
+      },
+      {
         "key": "urgentHighlight",
         "type": "bool",
         "label": "Highlight urgent windows",

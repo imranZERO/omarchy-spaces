@@ -310,6 +310,14 @@ Item {
             ]
           }
 
+          ChoiceSetting {
+            title: "CLICKING THE FOCUSED APP ICON"
+            key: "activeIconClick"
+            options: [
+              { value: "cycle", label: "Cycles windows" },
+              { value: "previous", label: "Previous window" }
+            ]
+          }
           ToggleSetting { label: "Scroll to switch workspaces"; key: "scrollSwitch" }
           ToggleSetting { label: "Middle-click icon closes window"; key: "middleClickClose" }
 
