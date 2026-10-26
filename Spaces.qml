@@ -495,14 +495,14 @@ Panel {
     var entry = DesktopEntries.heuristicLookup(appId)
     if (entry) return entry
 
-    var host = Model.webAppHost(appId)
-    if (host === "") return null
+    // Web apps: match the window's host and path, not the host alone, so
+    // apps sharing a host keep their own entries.
+    if (Model.webAppKey(appId) === "") return null
     var apps = DesktopEntries.applications.values
-    for (var i = 0; i < apps.length; i++) {
-      var exec = String(apps[i].execString || "")
-      if (exec.indexOf("//" + host) !== -1) return apps[i]
-    }
-    return null
+    var execs = []
+    for (var i = 0; i < apps.length; i++) execs.push(String(apps[i].execString || ""))
+    var index = Model.webAppEntryIndex(appId, execs)
+    return index >= 0 ? apps[index] : null
   }
 
   function iconUrl(name) {

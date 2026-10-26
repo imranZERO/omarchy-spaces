@@ -120,6 +120,48 @@ test("webAppHost parses chromium app classes", () => {
   assert.strictEqual(M.webAppHost("foot"), "")
 })
 
+test("webAppKey keeps the path of chromium app classes", () => {
+  assert.strictEqual(M.webAppKey("chrome-www.icloud.com__reminders_-Default"), "www.icloud.com__reminders_")
+  assert.strictEqual(M.webAppKey("brave-app.hey.com__-Profile_1"), "app.hey.com__")
+  assert.strictEqual(M.webAppKey("chrome-X.com__Home-Default"), "x.com__home")
+  assert.strictEqual(M.webAppKey("foot"), "")
+  assert.strictEqual(M.webAppKey("chrome-Default"), "")
+})
+
+test("chromiumAppKey builds the class key from a URL", () => {
+  assert.strictEqual(M.chromiumAppKey("https://www.icloud.com/reminders/"), "www.icloud.com__reminders_")
+  assert.strictEqual(M.chromiumAppKey("https://web.whatsapp.com/"), "web.whatsapp.com__")
+  assert.strictEqual(M.chromiumAppKey("https://web.whatsapp.com"), "web.whatsapp.com__")
+  assert.strictEqual(M.chromiumAppKey("https://x.com/home?lang=en#top"), "x.com__home")
+  assert.strictEqual(M.chromiumAppKey("http://user@Example.com:8080/a/b"), "example.com__a_b")
+  assert.strictEqual(M.chromiumAppKey("file:///home/me/index.html"), "")
+  assert.strictEqual(M.execUrl('omarchy-launch-webapp "https://www.icloud.com/pages/"'), "https://www.icloud.com/pages/")
+  assert.strictEqual(M.execUrl("chromium --app=https://x.com/home --flag"), "https://x.com/home")
+  assert.strictEqual(M.execUrl("foot"), "")
+})
+
+test("webAppEntryIndex tells apart web apps sharing a host", () => {
+  const execs = [
+    'omarchy-launch-webapp "https://www.icloud.com/numbers/"',
+    "foot",
+    'omarchy-launch-webapp "https://www.icloud.com/reminders/"',
+    'omarchy-launch-webapp "https://www.icloud.com/pages/"',
+    'omarchy-launch-webapp "https://web.whatsapp.com/"',
+  ]
+  assert.strictEqual(M.webAppEntryIndex("chrome-www.icloud.com__reminders_-Default", execs), 2)
+  assert.strictEqual(M.webAppEntryIndex("chrome-www.icloud.com__numbers_-Default", execs), 0)
+  assert.strictEqual(M.webAppEntryIndex("chromium-www.icloud.com__pages_-Profile_2", execs), 3)
+  // No exact match and several entries on the host: no guess.
+  assert.strictEqual(M.webAppEntryIndex("chrome-www.icloud.com__keynote_-Default", execs), -1)
+  // No exact match and one entry on the host (e.g. a different start path).
+  assert.strictEqual(M.webAppEntryIndex("chrome-web.whatsapp.com__send-Default", execs), 4)
+  assert.strictEqual(M.webAppEntryIndex("chrome-web.whatsapp.com__-Default", execs), 4)
+  assert.strictEqual(M.webAppEntryIndex("chrome-app.hey.com__-Default", execs), -1)
+  assert.strictEqual(M.webAppEntryIndex("foot", execs), -1)
+  // A host that merely starts with another host is not the same host.
+  assert.strictEqual(M.webAppEntryIndex("chrome-x.com__home-Default", ['omarchy-launch-webapp "https://x.community/"']), -1)
+})
+
 test("iconPathScore prefers svg then larger png", () => {
   assert.ok(M.iconPathScore("/a/scalable/apps/x.svg") > M.iconPathScore("/a/128x128/apps/x.png"))
   assert.ok(M.iconPathScore("/a/128x128/apps/x.png") > M.iconPathScore("/a/16x16/apps/x.png"))

@@ -447,6 +447,49 @@ function webAppHost(appId) {
   return m ? m[1] : ""
 }
 
+// The whole "<host>_<path>" part of a Chromium-family --app class, lowercased:
+// "chrome-www.icloud.com__reminders_-Default" -> "www.icloud.com__reminders_".
+// "" when the class is not one.
+function webAppKey(appId) {
+  var m = /^(?:chrome|chromium|brave|msedge|vivaldi|helium|opera)-([^_]+?(?:__|_).*)-(?:Default|Profile_\d+)$/i.exec(String(appId || ""))
+  return m ? m[1].toLowerCase() : ""
+}
+
+// The key Chromium builds for an --app URL: host + "_" + path, every "/"
+// turned into "_", so https://www.icloud.com/reminders/ runs as
+// "www.icloud.com__reminders_". Query, fragment, port and credentials are not
+// part of it. "" for anything but an http(s) URL.
+function chromiumAppKey(url) {
+  var m = /^https?:\/\/(?:[^\/?#@]*@)?([^\/?#:]+)(?::\d*)?([^?#]*)/i.exec(String(url || ""))
+  if (!m) return ""
+  return (m[1] + "_" + (m[2] || "/")).replace(/\//g, "_").toLowerCase()
+}
+
+// The first http(s) URL in a desktop entry's Exec line, or "".
+function execUrl(exec) {
+  var m = /https?:\/\/[^\s"'<>]+/i.exec(String(exec || ""))
+  return m ? m[0] : ""
+}
+
+// Which desktop entry (given their Exec lines) launched a Chromium-family
+// --app window: the entry whose URL builds the window's exact key, else the
+// only entry on the window's host. Several web apps can share a host
+// (www.icloud.com/reminders, /numbers, /pages...), so with more than one
+// candidate and no exact match it returns -1 rather than guess.
+function webAppEntryIndex(appId, execs) {
+  var key = webAppKey(appId)
+  if (key === "") return -1
+  var hostPrefix = webAppHost(appId).toLowerCase() + "_"
+  var only = -1, count = 0
+  for (var i = 0; i < execs.length; i++) {
+    var entryKey = chromiumAppKey(execUrl(execs[i]))
+    if (entryKey === "") continue
+    if (entryKey === key) return i
+    if (entryKey.indexOf(hostPrefix) === 0) { only = i; count++ }
+  }
+  return count === 1 ? only : -1
+}
+
 // Icon candidates scanned from disk: prefer scalable, then the largest raster.
 function iconPathScore(path) {
   var p = String(path || "")
@@ -686,7 +729,8 @@ if (typeof module !== "undefined") {
     parseWorkspaceBlocks: parseWorkspaceBlocks, monitorWorkspaceBlock: monitorWorkspaceBlock,
     workspaceBlockOf: workspaceBlockOf, workspaceSlotOf: workspaceSlotOf,
     sortWindows: sortWindows, iconItems: iconItems, truncate: truncate,
-    focusedLabel: focusedLabel, webAppHost: webAppHost, appIdCandidates: appIdCandidates, iconPathScore: iconPathScore,
+    focusedLabel: focusedLabel, webAppHost: webAppHost, webAppKey: webAppKey, chromiumAppKey: chromiumAppKey,
+    execUrl: execUrl, webAppEntryIndex: webAppEntryIndex, appIdCandidates: appIdCandidates, iconPathScore: iconPathScore,
     iconNameFromPath: iconNameFromPath, stepWorkspace: stepWorkspace, mergedEntry: mergedEntry,
     fallbackLetter: fallbackLetter
   }
