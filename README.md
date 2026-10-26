@@ -264,4 +264,3 @@ After code changes, run `omarchy restart shell`.
 ## License
 
 [MIT License](LICENSE).
-

@@ -695,4 +695,3 @@ test("workspaceIcon falls back to the label and honours precedence", () => {
 })
 
 if (failed) { console.log(failed + " failed"); process.exit(1) }
-
