@@ -172,6 +172,16 @@ If you added the Cursor hook, remove those entries from `~/.cursor/hooks.json`.
 
 Settings are organised into App icons, Windows, Appearance, Workspaces, Previews, and Behaviour. Each section fits its controls without an internal scroll area, and changes apply automatically and are saved to `~/.config/omarchy/shell.json`.
 
+Under Appearance, **Pill height** and **Pill padding** size the pills by hand. Both are 0 by default, which keeps the automatic pill height (bar height minus the usual inset) and the padding that comes from the density. Set Pill height to 8 px or more for a thinner pill with bar background above and below it; it is capped to the bar height. Set Pill padding to 1–24 for the space inside each pill, the same on the left and on the right. Radius, icon size and centring follow the height.
+
+On Omarchy 4.5, enabling **Only this monitor's workspaces** reads Omarchy's
+`monitor-workspaces` state file to display monitor-local numbers. Workspaces
+11–15 appear as 1–5 on the second monitor, and **Always show workspaces**
+keeps that monitor's own empty slots visible. Clicking a local slot uses
+Omarchy's monitor-aware workspace action. Workspaces visiting from another
+monitor keep their global labels. Without a matching monitor entry in the
+state file, or with per-monitor filtering disabled, global numbering remains.
+
 Use Tab / Shift+Tab to move through controls and Enter / Space to activate them. On sliders, use Left / Right to adjust by one, or Home / End for the minimum or maximum. Reset to defaults asks for confirmation before resetting all sections.
 
 To open settings with a key, add this to `~/.config/hypr/bindings.lua`:
@@ -191,6 +201,22 @@ Settings can also be set from a script:
 ```sh
 omarchy bar set tornikegomareli.spaces showApps all
 ```
+
+### Return to the previous window
+
+Under **Behaviour → Clicking the focused app icon**, choose **Previous window**
+to switch back when clicking the icon of the window you are already using.
+For example, focus a browser from your terminal, then click the browser icon
+again to return to that terminal. This works across workspaces too.
+
+```sh
+omarchy bar set tornikegomareli.spaces activeIconClick previous
+```
+
+The default, **Cycles windows** (`activeIconClick cycle`), keeps the existing
+behavior for grouped apps. **Previous window** takes precedence over cycling.
+Closed windows are skipped; if there is no previous window, focus stays put.
+Focus history starts when Spaces loads.
 
 ### Show numbers while holding Super
 
